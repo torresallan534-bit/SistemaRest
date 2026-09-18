@@ -1,0 +1,413 @@
+.contenedor {
+  max-width: 600px;
+  margin: 20px auto;
+  padding: 24px;
+  background-color: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.cabeceraContenedor {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.cabeceraContenedor .titulo {
+  margin: 0;
+  font-size: 22px;
+  color: #111827;
+}
+
+.botonReiniciar {
+  background-color: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.botonReiniciar:hover {
+  background-color: #fecaca;
+}
+
+/* Sección cliente */
+.seccionCliente {
+  background-color: #f3f4f6;
+  padding: 14px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.subtituloSeccion {
+  margin: 0 0 10px 0;
+  font-size: 13px;
+  color: #374151;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.gridCliente {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.input {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background-color: #ffffff;
+  color: #000000;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.input:focus {
+  outline: none;
+  border-color: #0070f3;
+}
+
+/* Filas de productos */
+.listaFilas {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.filaHorizontal {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background-color: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.columnaProducto {
+  flex: 2;
+  color: #000000;
+}
+
+.columnaCantidad {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: #000000;
+}
+
+.columnaSubtotal {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  color: #000000;
+}
+
+.label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #6b7280;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background-color: #ffffff;
+  color: #000000;
+}
+
+.controlCantidad {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.botonCantidad {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #d1d5db;
+  background-color: #ffffff;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #000000;
+}
+
+.numeroCantidad {
+  font-weight: 600;
+  width: 20px;
+  text-align: center;
+  color: #000000;
+}
+
+.montoSubtotal {
+  font-weight: 600;
+  color: #111827;
+}
+
+.botonEliminar {
+  background: none;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px;
+}
+
+.botonAgregar {
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px;
+  background-color: #82a6ee;
+  border: 1px dashed #191b1f;
+  border-radius: 6px;
+  color: #0c0e11;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.totalContenedor {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 2px solid #e5e7eb;
+  font-size: 18px;
+  color: #000000;
+}
+
+.totalContenedor strong {
+  color: #059669;
+  font-size: 22px;
+}
+
+/* Modal */
+.botonFactura {
+  width: 100%;
+  margin-top: 16px;
+  padding: 12px;
+  background-color: #10b981;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.botonFactura:hover:not(:disabled) {
+  background-color: #059669;
+}
+
+.botonFactura:disabled {
+  background-color: #d1d5db;
+  cursor: not-allowed;
+}
+
+.overlayModal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-in-out;
+}
+
+.contenidoModal {
+  background-color: #ffffff;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 500px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+.cabeceraModal {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.resumenFactura {
+  margin: 0;
+  font-size: 18px;
+  color: #000000;
+}
+
+.fechaFactura {
+  display: block;
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 2px;
+}
+
+.botonCerrarModal {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  color: #6c757d;
+}
+
+.cuerpoModal {
+  padding: 20px;
+  color: #000000;
+}
+
+.datosEmpresa {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed #d1d5db;
+  font-size: 13px;
+  color: #374151;
+}
+
+.nombreEmpresa {
+  font-size: 16px;
+  color: #111827;
+  font-weight: 700;
+}
+
+.datosClienteFactura {
+  margin-bottom: 14px;
+  padding: 8px 10px;
+  background-color: #f9fafb;
+  border-left: 3px solid #0070f3;
+  font-size: 13px;
+  color: #1f2937;
+}
+
+.tablaFactura {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  color: #000000;
+}
+
+.tablaFactura th,
+.tablaFactura td {
+  padding: 10px 8px;
+  text-align: left;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.tablaFactura th {
+  color: #000000;
+}
+
+.totalFactura {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 20px;
+  padding-top: 12px;
+  border-top: 2px solid #1a1a1a;
+  color: #000000;
+}
+
+.totalFactura strong {
+  font-size: 20px;
+  color: #10b981;
+}
+
+.pieModal {
+  display: flex;
+  gap: 10px;
+  padding: 16px 20px;
+  background-color: #f8f9fa;
+  border-top: 1px solid #e9ecef;
+}
+
+.botonImprimir {
+  flex: 2;
+  padding: 10px;
+  background-color: #0070f3;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.botonCerrarSecundario {
+  flex: 1;
+  padding: 10px;
+  background-color: #e9ecef;
+  color: #495057;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.noImprimir {
+  /* Marca clases no imprimibles */
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ==========================================
+   ESTILOS EXCLUSIVOS PARA IMPRESIÓN (PDF)
+   ========================================== */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .contenidoModal,
+  .contenidoModal * {
+    visibility: visible;
+  }
+
+  .noImprimir {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  .contenidoModal {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .cabeceraModal {
+    background: none !important;
+    border-bottom: 2px solid #000 !important;
+    padding-bottom: 10px !important;
+  }
+}
