@@ -10,6 +10,20 @@ interface Producto {
   precio: number;
 }
 
+interface Insumo {
+  id: string;
+  nombre: string;
+  unidad: string;
+  stock_actual: number;
+}
+
+interface RecetaItem {
+  id: string;
+  producto_id: string;
+  insumo_id: string;
+  cantidad_requerida: number;
+}
+
 interface LineaFactura {
   id: number;
   productoId: string;
@@ -34,60 +48,83 @@ interface Venta {
 }
 
 export default function Home() {
-  const [pestanaActiva, setPestanaActiva] = useState<'pos' | 'historial' | 'menu'>('pos');
+  const [pestanaActiva, setPestanaActiva] = useState<'pos' | 'historial' | 'menu' | 'inventario'>('pos');
 
   // Datos principales
   const [productos, setProductos] = useState<Producto[]>([]);
+  const [insumos, setInsumos] = useState<Insumo[]>([]);
+  const [recetas, setRecetas] = useState<RecetaItem[]>([]);
   const [ventas, setVentas] = useState<Venta[]>([]);
 
-  // Modal de Nueva Venta (Ventana Flotante POS)
+  // Modal POS
   const [mostrarModalNuevaVenta, setMostrarModalNuevaVenta] = useState(false);
   const [metodoPago, setMetodoPago] = useState<'Efectivo' | 'Tarjeta' | 'Transferencia'>('Efectivo');
   const [lineas, setLineas] = useState<LineaFactura[]>([{ id: 1, productoId: '', cantidad: 1 }]);
   const [cliente, setCliente] = useState({ nombre: '', documento: '' });
   const [total, setTotal] = useState<number>(0);
 
-  // Estados para ver factura / detalle
+  // Modales
   const [mostrarModalFactura, setMostrarModalFactura] = useState(false);
   const [ventaSeleccionada, setVentaSeleccionada] = useState<Venta | null>(null);
 
-  // Gestión de productos
+  // Gestión de Menú
   const [nuevoNombre, setNuevoNombre] = useState('');
   const [nuevoPrecio, setNuevoPrecio] = useState('');
   const [productoEditando, setProductoEditando] = useState<Producto | null>(null);
 
+  // Gestión Insumos / Materia Prima
+  const [nuevoInsumoNombre, setNuevoInsumoNombre] = useState('');
+  const [nuevoInsumoUnidad, setNuevoInsumoUnidad] = useState('g');
+  const [nuevoInsumoStock, setNuevoInsumoStock] = useState('');
+
+  // Gestión Recetas
+  const [prodRecetaSel, setProdRecetaSel] = useState('');
+  const [insumoRecetaSel, setInsumoRecetaSel] = useState('');
+  const [cantRecetaReq, setCantRecetaReq] = useState('');
+
+  // Arqueo / Conteo manual
+  const [conteosFisicos, setConteosFisicos] = useState<{ [key: string]: string }>({});
+
   useEffect(() => {
-    obtenerProductos();
-    obtenerVentas();
+    cargarTodo();
   }, []);
 
-  // Calcular total en la ventana flotante
+  const cargarTodo = async () => {
+    obtenerProductos();
+    obtenerInsumos();
+    obtenerRecetas();
+    obtenerVentas();
+  };
+
   useEffect(() => {
     const sumaTotal = lineas.reduce((acc, fila) => {
       const prod = productos.find((p) => p.id === fila.productoId);
-      const precio = prod ? prod.precio : 0;
-      return acc + precio * fila.cantidad;
+      return acc + (prod ? prod.precio : 0) * fila.cantidad;
     }, 0);
     setTotal(sumaTotal);
   }, [lineas, productos]);
 
   const obtenerProductos = async () => {
-    const { data, error } = await supabase
-      .from('productos')
-      .select('*')
-      .order('nombre', { ascending: true });
-    if (!error) setProductos((data as Producto[]) || []);
+    const { data } = await supabase.from('productos').select('*').order('nombre', { ascending: true });
+    if (data) setProductos(data as Producto[]);
+  };
+
+  const obtenerInsumos = async () => {
+    const { data } = await supabase.from('insumos').select('*').order('nombre', { ascending: true });
+    if (data) setInsumos(data as Insumo[]);
+  };
+
+  const obtenerRecetas = async () => {
+    const { data } = await supabase.from('recetas').select('*');
+    if (data) setRecetas(data as RecetaItem[]);
   };
 
   const obtenerVentas = async () => {
-    const { data, error } = await supabase
-      .from('ventas')
-      .select('*')
-      .order('created_at', { ascending: false });
-    if (!error) setVentas((data as Venta[]) || []);
+    const { data } = await supabase.from('ventas').select('*').order('created_at', { ascending: false });
+    if (data) setVentas(data as Venta[]);
   };
 
-  // Métrica del día
+  // Métricas POS
   const esDeHoy = (fechaISO: string) => {
     const fecha = new Date(fechaISO);
     const hoy = new Date();
@@ -100,17 +137,11 @@ export default function Home() {
 
   const ventasHoy = ventas.filter((v) => esDeHoy(v.created_at));
   const totalHoy = ventasHoy.reduce((acc, v) => acc + (v.total || 0), 0);
-  const totalEfectivoHoy = ventasHoy
-    .filter((v) => (v.metodo_pago || 'Efectivo') === 'Efectivo')
-    .reduce((acc, v) => acc + (v.total || 0), 0);
-  const totalTarjetaHoy = ventasHoy
-    .filter((v) => v.metodo_pago === 'Tarjeta')
-    .reduce((acc, v) => acc + (v.total || 0), 0);
-  const totalTransferenciaHoy = ventasHoy
-    .filter((v) => v.metodo_pago === 'Transferencia')
-    .reduce((acc, v) => acc + (v.total || 0), 0);
+  const totalEfectivoHoy = ventasHoy.filter((v) => (v.metodo_pago || 'Efectivo') === 'Efectivo').reduce((acc, v) => acc + (v.total || 0), 0);
+  const totalTarjetaHoy = ventasHoy.filter((v) => v.metodo_pago === 'Tarjeta').reduce((acc, v) => acc + (v.total || 0), 0);
+  const totalTransferenciaHoy = ventasHoy.filter((v) => v.metodo_pago === 'Transferencia').reduce((acc, v) => acc + (v.total || 0), 0);
 
-  // Manejo de la Venta Flotante
+  // Registrar Venta + Descuenta Insumos automáticamente
   const abrirNuevaVenta = () => {
     setCliente({ nombre: '', documento: '' });
     setLineas([{ id: Date.now(), productoId: '', cantidad: 1 }]);
@@ -124,6 +155,7 @@ export default function Home() {
       .map((f) => {
         const prod = productos.find((p) => p.id === f.productoId);
         return {
+          productoId: f.productoId,
           nombre: prod ? prod.nombre : '',
           cantidad: f.cantidad,
           precioUnitario: prod ? prod.precio : 0,
@@ -136,11 +168,29 @@ export default function Home() {
       return;
     }
 
+    // 1. Descontar materia prima de Supabase según las recetas
+    for (const pVal of productosValidos) {
+      const ingredientes = recetas.filter((r) => r.producto_id === pVal.productoId);
+      for (const ing of ingredientes) {
+        const insumoObj = insumos.find((i) => i.id === ing.insumo_id);
+        if (insumoObj) {
+          const consumoTotal = Number(ing.cantidad_requerida) * pVal.cantidad;
+          const nuevoStock = Number(insumoObj.stock_actual) - consumoTotal;
+
+          await supabase
+            .from('insumos')
+            .update({ stock_actual: nuevoStock })
+            .eq('id', insumoObj.id);
+        }
+      }
+    }
+
+    // 2. Registrar venta
     const nuevaVenta = {
       cliente: cliente.nombre || 'Consumidor Final',
       documento: cliente.documento || 'N/A',
       metodo_pago: metodoPago,
-      productos: productosValidos,
+      productos: productosValidos.map(({ productoId, ...resto }) => resto),
       total: total,
     };
 
@@ -149,7 +199,7 @@ export default function Home() {
     if (error) {
       alert('Error al guardar la venta: ' + error.message);
     } else {
-      await obtenerVentas();
+      await cargarTodo();
       setMostrarModalNuevaVenta(false);
       setMostrarModalFactura(true);
     }
@@ -160,17 +210,75 @@ export default function Home() {
     setMostrarModalFactura(false);
   };
 
-  // Manejo del Menú de productos
+  // Crear o editar Insumo
+  const guardarInsumo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!nuevoInsumoNombre.trim() || !nuevoInsumoStock) return;
+
+    await supabase.from('insumos').insert([
+      {
+        nombre: nuevoInsumoNombre,
+        unidad: nuevoInsumoUnidad,
+        stock_actual: parseFloat(nuevoInsumoStock),
+      },
+    ]);
+
+    setNuevoInsumoNombre('');
+    setNuevoInsumoStock('');
+    obtenerInsumos();
+  };
+
+  const eliminarInsumo = async (id: string) => {
+    if (!confirm('¿Eliminar este insumo?')) return;
+    await supabase.from('insumos').delete().eq('id', id);
+    obtenerInsumos();
+  };
+
+  // Guardar Ingrediente a Receta
+  const agregarIngredienteReceta = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!prodRecetaSel || !insumoRecetaSel || !cantRecetaReq) return;
+
+    await supabase.from('recetas').insert([
+      {
+        producto_id: prodRecetaSel,
+        insumo_id: insumoRecetaSel,
+        cantidad_requerida: parseFloat(cantRecetaReq),
+      },
+    ]);
+
+    setCantRecetaReq('');
+    obtenerRecetas();
+  };
+
+  const eliminarIngredienteReceta = async (id: string) => {
+    await supabase.from('recetas').delete().eq('id', id);
+    obtenerRecetas();
+  };
+
+  // Guardar Arqueo Físico
+  const actualizarStockFisico = async (insumoId: string) => {
+    const valor = conteosFisicos[insumoId];
+    if (valor === undefined || valor === '') return;
+
+    await supabase
+      .from('insumos')
+      .update({ stock_actual: parseFloat(valor) })
+      .eq('id', insumoId);
+
+    setConteosFisicos((prev) => ({ ...prev, [insumoId]: '' }));
+    obtenerInsumos();
+    alert('Stock rectificado exitosamente');
+  };
+
+  // Gestión de Menú
   const guardarProducto = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nuevoNombre.trim() || !nuevoPrecio) return;
     const precioNum = parseFloat(nuevoPrecio);
 
     if (productoEditando) {
-      await supabase
-        .from('productos')
-        .update({ nombre: nuevoNombre, precio: precioNum })
-        .eq('id', productoEditando.id);
+      await supabase.from('productos').update({ nombre: nuevoNombre, precio: precioNum }).eq('id', productoEditando.id);
       setProductoEditando(null);
     } else {
       await supabase.from('productos').insert([{ nombre: nuevoNombre, precio: precioNum }]);
@@ -207,17 +315,17 @@ export default function Home() {
           className={`${styles.botonPestana} ${pestanaActiva === 'pos' ? styles.pestanaActiva : ''}`}
           onClick={() => setPestanaActiva('pos')}
         >
-          🏪 Zona de Ventas (POS)
+          🏪 Zona POS
         </button>
         <button
           type="button"
-          className={`${styles.botonPestana} ${pestanaActiva === 'historial' ? styles.pestanaActiva : ''}`}
+          className={`${styles.botonPestana} ${pestanaActiva === 'inventario' ? styles.pestanaActiva : ''}`}
           onClick={() => {
-            obtenerVentas();
-            setPestanaActiva('historial');
+            cargarTodo();
+            setPestanaActiva('inventario');
           }}
         >
-          📋 Historial General ({ventas.length})
+          📦 Insumos / Inventario ({insumos.length})
         </button>
         <button
           type="button"
@@ -229,103 +337,53 @@ export default function Home() {
         >
           🍔 Menú / Productos ({productos.length})
         </button>
+        <button
+          type="button"
+          className={`${styles.botonPestana} ${pestanaActiva === 'historial' ? styles.pestanaActiva : ''}`}
+          onClick={() => {
+            obtenerVentas();
+            setPestanaActiva('historial');
+          }}
+        >
+          📋 Historial ({ventas.length})
+        </button>
       </div>
 
-      {/* PESTAÑA 1: ZONA DE VENTAS (POS) */}
+      {/* PESTAÑA 1: ZONA POS */}
       {pestanaActiva === 'pos' && (
         <>
           <div className={styles.cabeceraContenedor}>
             <div>
               <h2 className={styles.titulo}>Panel de Ventas del Día</h2>
-              <p style={{ color: '#6b7280', marginTop: '4px' }}>
-                Resumen de caja y registro rápido de operaciones
-              </p>
+              <p style={{ color: '#6b7280', marginTop: '4px' }}>Resumen de caja y registro de operaciones</p>
             </div>
             <button type="button" className={styles.botonFactura} onClick={abrirNuevaVenta}>
               ⚡ INICIAR NUEVA VENTA
             </button>
           </div>
 
-          {/* Tarjetas de Métricas de hoy */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-              gap: '15px',
-              marginBottom: '25px',
-            }}
-          >
-            <div
-              style={{
-                background: '#f3f4f6',
-                padding: '16px',
-                borderRadius: '12px',
-                borderLeft: '5px solid #2563eb',
-              }}
-            >
-              <span style={{ fontSize: '13px', color: '#4b5563', fontWeight: 'bold' }}>
-                Total Vendido Hoy
-              </span>
-              <h3 style={{ fontSize: '24px', margin: '6px 0 0', color: '#111827' }}>
-                ${totalHoy.toLocaleString()}
-              </h3>
-              <span style={{ fontSize: '12px', color: '#6b7280' }}>
-                {ventasHoy.length} venta(s) realizadas
-              </span>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '25px' }}>
+            <div style={{ background: '#f3f4f6', padding: '16px', borderRadius: '12px', borderLeft: '5px solid #2563eb' }}>
+              <span style={{ fontSize: '13px', color: '#4b5563', fontWeight: 'bold' }}>Total Vendido Hoy</span>
+              <h3 style={{ fontSize: '24px', margin: '6px 0 0', color: '#111827' }}>${totalHoy.toLocaleString()}</h3>
+              <span style={{ fontSize: '12px', color: '#6b7280' }}>{ventasHoy.length} venta(s)</span>
             </div>
-
-            <div
-              style={{
-                background: '#f3f4f6',
-                padding: '16px',
-                borderRadius: '12px',
-                borderLeft: '5px solid #16a34a',
-              }}
-            >
-              <span style={{ fontSize: '13px', color: '#4b5563', fontWeight: 'bold' }}>
-                💵 Efectivo
-              </span>
-              <h3 style={{ fontSize: '22px', margin: '6px 0 0', color: '#16a34a' }}>
-                ${totalEfectivoHoy.toLocaleString()}
-              </h3>
+            <div style={{ background: '#f3f4f6', padding: '16px', borderRadius: '12px', borderLeft: '5px solid #16a34a' }}>
+              <span style={{ fontSize: '13px', color: '#4b5563', fontWeight: 'bold' }}>💵 Efectivo</span>
+              <h3 style={{ fontSize: '22px', margin: '6px 0 0', color: '#16a34a' }}>${totalEfectivoHoy.toLocaleString()}</h3>
             </div>
-
-            <div
-              style={{
-                background: '#f3f4f6',
-                padding: '16px',
-                borderRadius: '12px',
-                borderLeft: '5px solid #9333ea',
-              }}
-            >
-              <span style={{ fontSize: '13px', color: '#4b5563', fontWeight: 'bold' }}>
-                💳 Tarjetas
-              </span>
-              <h3 style={{ fontSize: '22px', margin: '6px 0 0', color: '#9333ea' }}>
-                ${totalTarjetaHoy.toLocaleString()}
-              </h3>
+            <div style={{ background: '#f3f4f6', padding: '16px', borderRadius: '12px', borderLeft: '5px solid #9333ea' }}>
+              <span style={{ fontSize: '13px', color: '#4b5563', fontWeight: 'bold' }}>💳 Tarjetas</span>
+              <h3 style={{ fontSize: '22px', margin: '6px 0 0', color: '#9333ea' }}>${totalTarjetaHoy.toLocaleString()}</h3>
             </div>
-
-            <div
-              style={{
-                background: '#f3f4f6',
-                padding: '16px',
-                borderRadius: '12px',
-                borderLeft: '5px solid #ea580c',
-              }}
-            >
-              <span style={{ fontSize: '13px', color: '#4b5563', fontWeight: 'bold' }}>
-                📲 Transferencias
-              </span>
-              <h3 style={{ fontSize: '22px', margin: '6px 0 0', color: '#ea580c' }}>
-                ${totalTransferenciaHoy.toLocaleString()}
-              </h3>
+            <div style={{ background: '#f3f4f6', padding: '16px', borderRadius: '12px', borderLeft: '5px solid #ea580c' }}>
+              <span style={{ fontSize: '13px', color: '#4b5563', fontWeight: 'bold' }}>📲 Transferencias</span>
+              <h3 style={{ fontSize: '22px', margin: '6px 0 0', color: '#ea580c' }}>${totalTransferenciaHoy.toLocaleString()}</h3>
             </div>
           </div>
 
-          {/* Tabla de Ventas de Hoy */}
           <div className={styles.seccionHistorial}>
-            <h3 className={styles.subtituloSeccion}>Últimas ventas registradas hoy</h3>
+            <h3 className={styles.subtituloSeccion}>Últimas ventas del día</h3>
             {ventasHoy.length === 0 ? (
               <p className={styles.textoVacio}>Aún no se han registrado ventas el día de hoy.</p>
             ) : (
@@ -334,7 +392,7 @@ export default function Home() {
                   <tr>
                     <th>Hora</th>
                     <th>Cliente</th>
-                    <th>Método de Pago</th>
+                    <th>Método</th>
                     <th>Total</th>
                     <th>Acciones</th>
                   </tr>
@@ -351,33 +409,17 @@ export default function Home() {
                             borderRadius: '6px',
                             fontSize: '12px',
                             fontWeight: 'bold',
-                            backgroundColor:
-                              v.metodo_pago === 'Tarjeta'
-                                ? '#f3e8ff'
-                                : v.metodo_pago === 'Transferencia'
-                                ? '#ffedd5'
-                                : '#dcfce7',
-                            color:
-                              v.metodo_pago === 'Tarjeta'
-                                ? '#7e22ce'
-                                : v.metodo_pago === 'Transferencia'
-                                ? '#c2410c'
-                                : '#15803d',
+                            backgroundColor: v.metodo_pago === 'Tarjeta' ? '#f3e8ff' : v.metodo_pago === 'Transferencia' ? '#ffedd5' : '#dcfce7',
+                            color: v.metodo_pago === 'Tarjeta' ? '#7e22ce' : v.metodo_pago === 'Transferencia' ? '#c2410c' : '#15803d',
                           }}
                         >
                           {v.metodo_pago || 'Efectivo'}
                         </span>
                       </td>
+                      <td><strong>${v.total ? v.total.toLocaleString() : 0}</strong></td>
                       <td>
-                        <strong>${v.total ? v.total.toLocaleString() : 0}</strong>
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          className={styles.botonVerDetalle}
-                          onClick={() => setVentaSeleccionada(v)}
-                        >
-                          👁️ Ver Detalle
+                        <button type="button" className={styles.botonVerDetalle} onClick={() => setVentaSeleccionada(v)}>
+                          👁️ Ver
                         </button>
                       </td>
                     </tr>
@@ -389,60 +431,185 @@ export default function Home() {
         </>
       )}
 
-      {/* PESTAÑA 2: HISTORIAL GENERAL */}
-      {pestanaActiva === 'historial' && (
+      {/* PESTAÑA 2: INVENTARIO Y RECETAS */}
+      {pestanaActiva === 'inventario' && (
         <div className={styles.seccionHistorial}>
-          <h2 className={styles.titulo}>Historial General de Ventas</h2>
-          {ventas.length === 0 ? (
-            <p className={styles.textoVacio}>No hay ventas registradas aún.</p>
-          ) : (
-            <table className={styles.tablaHistorial}>
-              <thead>
-                <tr>
-                  <th>Fecha</th>
-                  <th>Cliente</th>
-                  <th>Documento</th>
-                  <th>Método de Pago</th>
-                  <th>Total</th>
-                  <th>Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ventas.map((v) => (
-                  <tr key={v.id}>
-                    <td>{formatearFecha(v.created_at)}</td>
-                    <td>{v.cliente}</td>
-                    <td>{v.documento}</td>
-                    <td>{v.metodo_pago || 'Efectivo'}</td>
+          <h2 className={styles.titulo}>Control de Materia Prima e Inventario</h2>
+
+          {/* Formulario Agregar Insumo */}
+          <form onSubmit={guardarInsumo} style={{ background: '#f9fafb', padding: '16px', borderRadius: '12px', marginBottom: '25px' }}>
+            <h4 className={styles.subtituloSeccion}>➕ Registrar Nueva Materia Prima / Insumo</h4>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '10px' }}>
+              <div>
+                <label className={styles.label}>Nombre Insumo</label>
+                <input
+                  type="text"
+                  className={styles.input}
+                  placeholder="Ej: Carne de Res, Pan Burger, Queso Cheddar"
+                  value={nuevoInsumoNombre}
+                  onChange={(e) => setNuevoInsumoNombre(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label className={styles.label}>Unidad Medida</label>
+                <select className={styles.select} value={nuevoInsumoUnidad} onChange={(e) => setNuevoInsumoUnidad(e.target.value)}>
+                  <option value="g">Gramos (g)</option>
+                  <option value="kg">Kilos (kg)</option>
+                  <option value="ml">Mililitros (ml)</option>
+                  <option value="L">Litros (L)</option>
+                  <option value="unidades">Unidades</option>
+                </select>
+              </div>
+              <div>
+                <label className={styles.label}>Stock Inicial</label>
+                <input
+                  type="number"
+                  step="any"
+                  className={styles.input}
+                  placeholder="Ej: 5000"
+                  value={nuevoInsumoStock}
+                  onChange={(e) => setNuevoInsumoStock(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+            <button type="submit" className={styles.botonVerDetalle} style={{ marginTop: '12px' }}>
+              Guardar Insumo
+            </button>
+          </form>
+
+          {/* Formulario Asignar Receta */}
+          <form onSubmit={agregarIngredienteReceta} style={{ background: '#eff6ff', padding: '16px', borderRadius: '12px', marginBottom: '25px' }}>
+            <h4 className={styles.subtituloSeccion}>🍳 Definir Consumo por Producto (Receta)</h4>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+              <div>
+                <label className={styles.label}>Producto del Menú</label>
+                <select className={styles.select} value={prodRecetaSel} onChange={(e) => setProdRecetaSel(e.target.value)} required>
+                  <option value="">-- Seleccionar --</option>
+                  {productos.map((p) => (
+                    <option key={p.id} value={p.id}>{p.nombre}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className={styles.label}>Insumo que Consume</label>
+                <select className={styles.select} value={insumoRecetaSel} onChange={(e) => setInsumoRecetaSel(e.target.value)} required>
+                  <option value="">-- Seleccionar --</option>
+                  {insumos.map((i) => (
+                    <option key={i.id} value={i.id}>{i.nombre} ({i.unidad})</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className={styles.label}>Cantidad por Venta</label>
+                <input
+                  type="number"
+                  step="any"
+                  className={styles.input}
+                  placeholder="Ej: 150 (g) o 1 (unid)"
+                  value={cantRecetaReq}
+                  onChange={(e) => setCantRecetaReq(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+            <button type="submit" className={styles.botonVerDetalle} style={{ marginTop: '12px', backgroundColor: '#2563eb' }}>
+              ＋ Vincular a la Receta
+            </button>
+          </form>
+
+          {/* Tabla de Arqueo Diario e Inventario Teórico vs. Real */}
+          <h3 className={styles.subtituloSeccion}>📋 Arqueo Diario e Inventario Actual</h3>
+          <table className={styles.tablaHistorial}>
+            <thead>
+              <tr>
+                <th>Materia Prima</th>
+                <th>Stock Teórico (Sistema)</th>
+                <th>Receta / Consumos</th>
+                <th>Conteo Físico Real</th>
+                <th>Acción / Rectificar</th>
+              </tr>
+            </thead>
+            <tbody>
+              {insumos.map((i) => {
+                const recetasUso = recetas.filter((r) => r.insumo_id === i.id);
+                const valorConteo = conteosFisicos[i.id] ?? '';
+                const diferencia = valorConteo !== '' ? parseFloat(valorConteo) - Number(i.stock_actual) : null;
+
+                return (
+                  <tr key={i.id}>
                     <td>
-                      <strong>${v.total ? v.total.toLocaleString() : 0}</strong>
+                      <strong>{i.nombre}</strong>
                     </td>
                     <td>
-                      <button
-                        type="button"
-                        className={styles.botonVerDetalle}
-                        onClick={() => setVentaSeleccionada(v)}
-                      >
-                        👁️ Ver Detalle
-                      </button>
+                      <span style={{ fontSize: '16px', fontWeight: 'bold', color: i.stock_actual <= 0 ? '#dc2626' : '#111827' }}>
+                        {Number(i.stock_actual).toLocaleString()} {i.unidad}
+                      </span>
+                    </td>
+                    <td>
+                      <ul style={{ margin: 0, paddingLeft: '15px', fontSize: '12px' }}>
+                        {recetasUso.length === 0 ? (
+                          <span style={{ color: '#9ca3af' }}>Sin vincular</span>
+                        ) : (
+                          recetasUso.map((ru) => {
+                            const p = productos.find((prod) => prod.id === ru.producto_id);
+                            return (
+                              <li key={ru.id}>
+                                {p ? p.nombre : 'Prod'}: {ru.cantidad_requerida} {i.unidad}
+                                <button
+                                  type="button"
+                                  onClick={() => eliminarIngredienteReceta(ru.id)}
+                                  style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', marginLeft: '4px' }}
+                                >
+                                  ✕
+                                </button>
+                              </li>
+                            );
+                          })
+                        )}
+                      </ul>
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        step="any"
+                        placeholder="Ingresar físico"
+                        className={styles.input}
+                        style={{ width: '130px', padding: '6px' }}
+                        value={valorConteo}
+                        onChange={(e) => setConteosFisicos({ ...conteosFisicos, [i.id]: e.target.value })}
+                      />
+                      {diferencia !== null && (
+                        <div style={{ fontSize: '11px', marginTop: '4px', fontWeight: 'bold', color: diferencia < 0 ? '#dc2626' : '#16a34a' }}>
+                          {diferencia === 0 ? '✅ Sin diferencia' : diferencia < 0 ? `⚠️ Falta: ${diferencia} ${i.unidad}` : `➕ Sobra: +${diferencia} ${i.unidad}`}
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button type="button" className={styles.botonVerDetalle} onClick={() => actualizarStockFisico(i.id)}>
+                          💾 Guardar
+                        </button>
+                        <button type="button" className={styles.botonEliminar} style={{ position: 'static' }} onClick={() => eliminarInsumo(i.id)}>
+                          🗑️
+                        </button>
+                      </div>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
-      {/* PESTAÑA 3: GESTIÓN DE MENÚ */}
+      {/* PESTAÑA 3: MENÚ / PRODUCTOS */}
       {pestanaActiva === 'menu' && (
         <div className={styles.seccionHistorial}>
           <h2 className={styles.titulo}>Gestión del Menú de Productos</h2>
-
           <form onSubmit={guardarProducto} style={{ marginBottom: '25px' }}>
-            <h4 className={styles.subtituloSeccion}>
-              {productoEditando ? '✏️ Editar Producto' : '➕ Agregar Nuevo Producto'}
-            </h4>
+            <h4 className={styles.subtituloSeccion}>{productoEditando ? '✏️ Editar Producto' : '➕ Agregar Nuevo Producto'}</h4>
             <div className={styles.gridCliente}>
               <div>
                 <label className={styles.label}>Nombre del Producto</label>
@@ -498,9 +665,7 @@ export default function Home() {
             <tbody>
               {productos.map((p) => (
                 <tr key={p.id}>
-                  <td>
-                    <strong>{p.nombre}</strong>
-                  </td>
+                  <td><strong>{p.nombre}</strong></td>
                   <td>${p.precio.toLocaleString()}</td>
                   <td style={{ display: 'flex', gap: '8px' }}>
                     <button
@@ -514,12 +679,7 @@ export default function Home() {
                     >
                       ✏️ Editar
                     </button>
-                    <button
-                      type="button"
-                      className={styles.botonEliminar}
-                      onClick={() => eliminarProducto(p.id)}
-                      style={{ position: 'static' }}
-                    >
+                    <button type="button" className={styles.botonEliminar} onClick={() => eliminarProducto(p.id)} style={{ position: 'static' }}>
                       🗑️ Eliminar
                     </button>
                   </td>
@@ -530,27 +690,57 @@ export default function Home() {
         </div>
       )}
 
-      {/* MODAL FLOTANTE: CALCULADORA DE NUEVA VENTA */}
+      {/* PESTAÑA 4: HISTORIAL GENERAL */}
+      {pestanaActiva === 'historial' && (
+        <div className={styles.seccionHistorial}>
+          <h2 className={styles.titulo}>Historial General de Ventas</h2>
+          {ventas.length === 0 ? (
+            <p className={styles.textoVacio}>No hay ventas registradas aún.</p>
+          ) : (
+            <table className={styles.tablaHistorial}>
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Cliente</th>
+                  <th>Documento</th>
+                  <th>Método de Pago</th>
+                  <th>Total</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ventas.map((v) => (
+                  <tr key={v.id}>
+                    <td>{formatearFecha(v.created_at)}</td>
+                    <td>{v.cliente}</td>
+                    <td>{v.documento}</td>
+                    <td>{v.metodo_pago || 'Efectivo'}</td>
+                    <td><strong>${v.total ? v.total.toLocaleString() : 0}</strong></td>
+                    <td>
+                      <button type="button" className={styles.botonVerDetalle} onClick={() => setVentaSeleccionada(v)}>
+                        👁️ Ver Detalle
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {/* MODAL POS (NUEVA VENTA) */}
       {mostrarModalNuevaVenta && (
         <div className={styles.overlayModal} onClick={() => setMostrarModalNuevaVenta(false)}>
-          <div
-            className={styles.contenidoModal}
-            onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: '650px', width: '90%' }}
-          >
+          <div className={styles.contenidoModal} onClick={(e) => e.stopPropagation()} style={{ maxWidth: '650px', width: '90%' }}>
             <div className={styles.cabeceraModal}>
-              <h3 className={styles.resumenFactura}>🧮 Nueva Venta / Calculadora</h3>
-              <button
-                type="button"
-                className={styles.botonCerrarModal}
-                onClick={() => setMostrarModalNuevaVenta(false)}
-              >
+              <h3 className={styles.resumenFactura}>🧮 Nueva Venta / POS</h3>
+              <button type="button" className={styles.botonCerrarModal} onClick={() => setMostrarModalNuevaVenta(false)}>
                 ✕
               </button>
             </div>
 
             <div className={styles.cuerpoModal}>
-              {/* Datos Cliente */}
               <div className={styles.gridCliente} style={{ marginBottom: '15px' }}>
                 <div>
                   <label className={styles.label}>Cliente</label>
@@ -574,7 +764,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Método de Pago */}
               <div style={{ marginBottom: '15px' }}>
                 <label className={styles.label}>Método de Pago</label>
                 <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
@@ -603,7 +792,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Lista de Productos */}
               <div className={styles.listaFilas}>
                 {lineas.map((fila, index) => {
                   const prodSel = productos.find((p) => p.id === fila.productoId);
@@ -696,13 +884,9 @@ export default function Home() {
 
             <div className={styles.pieModal}>
               <button type="button" className={styles.botonFactura} onClick={guardarVenta}>
-                ✅ Registrar y Generar Factura
+                ✅ Registrar Venta y Descontar Insumos
               </button>
-              <button
-                type="button"
-                className={styles.botonCerrarSecundario}
-                onClick={() => setMostrarModalNuevaVenta(false)}
-              >
+              <button type="button" className={styles.botonCerrarSecundario} onClick={() => setMostrarModalNuevaVenta(false)}>
                 Cancelar
               </button>
             </div>
@@ -710,7 +894,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* MODAL FACTURA PARA IMPRIMIR */}
+      {/* MODAL FACTURA */}
       {mostrarModalFactura && (
         <div className={styles.overlayModal} onClick={() => setMostrarModalFactura(false)}>
           <div className={styles.contenidoModal} onClick={(e) => e.stopPropagation()}>
@@ -719,11 +903,7 @@ export default function Home() {
                 <h3 className={styles.resumenFactura}>Factura de Venta</h3>
                 <span className={styles.fechaFactura}>{new Date().toLocaleDateString('es-CO')}</span>
               </div>
-              <button
-                type="button"
-                className={`${styles.botonCerrarModal} ${styles.noImprimir}`}
-                onClick={() => setMostrarModalFactura(false)}
-              >
+              <button type="button" className={`${styles.botonCerrarModal} ${styles.noImprimir}`} onClick={() => setMostrarModalFactura(false)}>
                 ✕
               </button>
             </div>
@@ -782,11 +962,7 @@ export default function Home() {
               <button type="button" className={styles.botonImprimir} onClick={imprimirYFinalizar}>
                 🖨️ Imprimir Factura
               </button>
-              <button
-                type="button"
-                className={styles.botonCerrarSecundario}
-                onClick={() => setMostrarModalFactura(false)}
-              >
+              <button type="button" className={styles.botonCerrarSecundario} onClick={() => setMostrarModalFactura(false)}>
                 Cerrar
               </button>
             </div>
@@ -801,15 +977,9 @@ export default function Home() {
             <div className={styles.cabeceraModal}>
               <div>
                 <h3 className={styles.resumenFactura}>Detalle Venta #{ventaSeleccionada.id}</h3>
-                <span className={styles.fechaFactura}>
-                  {formatearFecha(ventaSeleccionada.created_at)}
-                </span>
+                <span className={styles.fechaFactura}>{formatearFecha(ventaSeleccionada.created_at)}</span>
               </div>
-              <button
-                type="button"
-                className={styles.botonCerrarModal}
-                onClick={() => setVentaSeleccionada(null)}
-              >
+              <button type="button" className={styles.botonCerrarModal} onClick={() => setVentaSeleccionada(null)}>
                 ✕
               </button>
             </div>
@@ -852,18 +1022,12 @@ export default function Home() {
 
               <div className={styles.totalFactura}>
                 <span>Total:</span>
-                <strong>
-                  ${ventaSeleccionada.total ? ventaSeleccionada.total.toLocaleString() : 0}
-                </strong>
+                <strong>${ventaSeleccionada.total ? ventaSeleccionada.total.toLocaleString() : 0}</strong>
               </div>
             </div>
 
             <div className={styles.pieModal}>
-              <button
-                type="button"
-                className={styles.botonCerrarSecundario}
-                onClick={() => setVentaSeleccionada(null)}
-              >
+              <button type="button" className={styles.botonCerrarSecundario} onClick={() => setVentaSeleccionada(null)}>
                 Cerrar
               </button>
             </div>
