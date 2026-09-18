@@ -1,27 +1,61 @@
 'use client';
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import styles from './Calculadora.module.css';
 
-const PRODUCTOS_DISPONIBLES = [
+// 1. Interfaces para TypeScript
+interface ProductoDisponible {
+  id: string;
+  nombre: string;
+  precio: number;
+}
+
+interface LineaFactura {
+  id: number;
+  productoId: string;
+  cantidad: number;
+}
+
+interface ProductoVenta {
+  nombre: string;
+  cantidad: number;
+  precioUnitario: number;
+  subtotal: number;
+}
+
+interface Venta {
+  id: number;
+  created_at: string;
+  cliente: string;
+  documento: string;
+  total: number;
+  productos: ProductoVenta[];
+}
+
+const PRODUCTOS_DISPONIBLES: ProductoDisponible[] = [
   { id: 'prodA', nombre: 'Producto A', precio: 15000 },
   { id: 'prodB', nombre: 'Producto B', precio: 25000 },
   { id: 'prodC', nombre: 'Producto C', precio: 18000 },
   { id: 'prodD', nombre: 'Producto D', precio: 30000 },
 ];
 
-export default function Calculadora() {
-  // Pestaña activa: 'nueva' para la calculadora, 'historial' para ver ventas
-  const [pestanaActiva, setPestanaActiva] = useState('nueva');
+export default function Home() {
+  const [pestanaActiva, setPestanaActiva] = useState<'nueva' | 'historial'>('nueva');
 
-  const [lineas, setLineas] = useState([{ id: 1, productoId: '', cantidad: 1 }]);
-  const [total, setTotal] = useState(0);
-  const [mostrarModal, setMostrarModal] = useState(false);
-  const [cliente, setCliente] = useState({ nombre: '', documento: '' });
-  
-  // Ventas desde Supabase y detalle seleccionado
-  const [ventas, setVentas] = useState([]);
-  const [ventaSeleccionada, setVentaSeleccionada] = useState(null);
+  const [lineas, setLineas] = useState<LineaFactura[]>([
+    { id: 1, productoId: '', cantidad: 1 },
+  ]);
+  const [total, setTotal] = useState<number>(0);
+  const [mostrarModal, setMostrarModal] = useState<boolean>(false);
+  const [cliente, setCliente] = useState<{ nombre: string; documento: string }>({
+    nombre: '',
+    documento: '',
+  });
+
+  // Ventas desde Supabase y detalle seleccionado con tipos definidos
+  const [ventas, setVentas] = useState<Venta[]>([]);
+  const [ventaSeleccionada, setVentaSeleccionada] = useState<Venta | null>(null);
 
   useEffect(() => {
     obtenerVentas();
@@ -31,7 +65,7 @@ export default function Calculadora() {
     const sumaTotal = lineas.reduce((acc, fila) => {
       const producto = PRODUCTOS_DISPONIBLES.find((p) => p.id === fila.productoId);
       const precio = producto ? producto.precio : 0;
-      return acc + (precio * fila.cantidad);
+      return acc + precio * fila.cantidad;
     }, 0);
 
     setTotal(sumaTotal);
@@ -46,7 +80,7 @@ export default function Calculadora() {
     if (error) {
       console.error('Error al obtener ventas:', error.message);
     } else {
-      setVentas(data || []);
+      setVentas((data as Venta[]) || []);
     }
   };
 
@@ -90,24 +124,24 @@ export default function Calculadora() {
     setLineas([...lineas, { id: Date.now(), productoId: '', cantidad: 1 }]);
   };
 
-  const actualizarProducto = (index, productoId) => {
+  const actualizarProducto = (index: number, productoId: string) => {
     const nuevasLineas = [...lineas];
     nuevasLineas[index].productoId = productoId;
     setLineas(nuevasLineas);
   };
 
-  const eliminarFila = (idAEliminar) => {
+  const eliminarFila = (idAEliminar: number) => {
     if (lineas.length === 1) return;
     setLineas(lineas.filter((fila) => fila.id !== idAEliminar));
   };
 
-  const incrementarCantidad = (index) => {
+  const incrementarCantidad = (index: number) => {
     const nuevasLineas = [...lineas];
     nuevasLineas[index].cantidad += 1;
     setLineas(nuevasLineas);
   };
 
-  const decrementarCantidad = (index) => {
+  const decrementarCantidad = (index: number) => {
     const nuevasLineas = [...lineas];
     if (nuevasLineas[index].cantidad > 1) {
       nuevasLineas[index].cantidad -= 1;
@@ -115,7 +149,7 @@ export default function Calculadora() {
     }
   };
 
-  const formatearFecha = (fechaISO) => {
+  const formatearFecha = (fechaISO: string) => {
     if (!fechaISO) return '';
     return new Date(fechaISO).toLocaleDateString('es-CO', {
       year: 'numeric',
@@ -134,14 +168,18 @@ export default function Calculadora() {
       <div className={styles.pestanasContenedor}>
         <button
           type="button"
-          className={`${styles.botonPestana} ${pestanaActiva === 'nueva' ? styles.pestanaActiva : ''}`}
+          className={`${styles.botonPestana} ${
+            pestanaActiva === 'nueva' ? styles.pestanaActiva : ''
+          }`}
           onClick={() => setPestanaActiva('nueva')}
         >
           ➕ Nueva Venta
         </button>
         <button
           type="button"
-          className={`${styles.botonPestana} ${pestanaActiva === 'historial' ? styles.pestanaActiva : ''}`}
+          className={`${styles.botonPestana} ${
+            pestanaActiva === 'historial' ? styles.pestanaActiva : ''
+          }`}
           onClick={() => {
             obtenerVentas();
             setPestanaActiva('historial');
@@ -156,8 +194,8 @@ export default function Calculadora() {
         <>
           <div className={styles.cabeceraContenedor}>
             <h2 className={styles.titulo}>Calculadora de Precios</h2>
-            <button 
-              type="button" 
+            <button
+              type="button"
               className={styles.botonReiniciar}
               onClick={reiniciarFormulario}
             >
@@ -170,7 +208,7 @@ export default function Calculadora() {
             <div className={styles.gridCliente}>
               <div>
                 <label className={styles.label}>Nombre / Razón Social</label>
-                <input 
+                <input
                   type="text"
                   className={styles.input}
                   placeholder="Ej: Juan Pérez"
@@ -180,7 +218,7 @@ export default function Calculadora() {
               </div>
               <div>
                 <label className={styles.label}>Cédula / NIT</label>
-                <input 
+                <input
                   type="text"
                   className={styles.input}
                   placeholder="Ej: 1018234567"
@@ -193,14 +231,18 @@ export default function Calculadora() {
 
           <div className={styles.listaFilas}>
             {lineas.map((fila, index) => {
-              const productoSeleccionado = PRODUCTOS_DISPONIBLES.find((p) => p.id === fila.productoId);
-              const subtotalFila = productoSeleccionado ? productoSeleccionado.precio * fila.cantidad : 0;
+              const productoSeleccionado = PRODUCTOS_DISPONIBLES.find(
+                (p) => p.id === fila.productoId
+              );
+              const subtotalFila = productoSeleccionado
+                ? productoSeleccionado.precio * fila.cantidad
+                : 0;
 
               return (
                 <div key={fila.id} className={styles.filaHorizontal}>
                   <div className={styles.columnaProducto}>
                     <label className={styles.label}>Producto {index + 1}</label>
-                    <select 
+                    <select
                       className={styles.select}
                       value={fila.productoId}
                       onChange={(e) => actualizarProducto(index, e.target.value)}
@@ -217,8 +259,8 @@ export default function Calculadora() {
                   <div className={styles.columnaCantidad}>
                     <label className={styles.label}>Cant.</label>
                     <div className={styles.controlCantidad}>
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         className={styles.botonCantidad}
                         onClick={() => decrementarCantidad(index)}
                         disabled={fila.cantidad <= 1}
@@ -226,8 +268,8 @@ export default function Calculadora() {
                         -
                       </button>
                       <span className={styles.numeroCantidad}>{fila.cantidad}</span>
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         className={styles.botonCantidad}
                         onClick={() => incrementarCantidad(index)}
                       >
@@ -238,12 +280,14 @@ export default function Calculadora() {
 
                   <div className={styles.columnaSubtotal}>
                     <span className={styles.label}>Subtotal</span>
-                    <span className={styles.montoSubtotal}>${subtotalFila.toLocaleString()}</span>
+                    <span className={styles.montoSubtotal}>
+                      ${subtotalFila.toLocaleString()}
+                    </span>
                   </div>
 
                   {lineas.length > 1 && (
-                    <button 
-                      type="button" 
+                    <button
+                      type="button"
                       className={styles.botonEliminar}
                       onClick={() => eliminarFila(fila.id)}
                     >
@@ -264,8 +308,8 @@ export default function Calculadora() {
             <strong>${total.toLocaleString()}</strong>
           </div>
 
-          <button 
-            type="button" 
+          <button
+            type="button"
             className={styles.botonFactura}
             onClick={() => setMostrarModal(true)}
             disabled={productosValidos.length === 0}
@@ -299,7 +343,9 @@ export default function Calculadora() {
                     <td>{formatearFecha(v.created_at)}</td>
                     <td>{v.cliente}</td>
                     <td>{v.documento}</td>
-                    <td><strong>${v.total ? v.total.toLocaleString() : 0}</strong></td>
+                    <td>
+                      <strong>${v.total ? v.total.toLocaleString() : 0}</strong>
+                    </td>
                     <td>
                       <button
                         type="button"
@@ -324,10 +370,12 @@ export default function Calculadora() {
             <div className={styles.cabeceraModal}>
               <div>
                 <h3 className={styles.resumenFactura}>Resumen de Factura</h3>
-                <span className={styles.fechaFactura}>{new Date().toLocaleDateString('es-CO')}</span>
+                <span className={styles.fechaFactura}>
+                  {new Date().toLocaleDateString('es-CO')}
+                </span>
               </div>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className={`${styles.botonCerrarModal} ${styles.noImprimir}`}
                 onClick={() => setMostrarModal(false)}
               >
@@ -344,7 +392,12 @@ export default function Calculadora() {
               {(cliente.nombre || cliente.documento) && (
                 <div className={styles.datosClienteFactura}>
                   <strong>Cliente:</strong> {cliente.nombre || 'Consumidor Final'}
-                  {cliente.documento && <span> | <strong>CC/NIT:</strong> {cliente.documento}</span>}
+                  {cliente.documento && (
+                    <span>
+                      {' '}
+                      | <strong>CC/NIT:</strong> {cliente.documento}
+                    </span>
+                  )}
                 </div>
               )}
 
@@ -359,13 +412,17 @@ export default function Calculadora() {
                 </thead>
                 <tbody>
                   {productosValidos.map((fila) => {
-                    const prod = PRODUCTOS_DISPONIBLES.find((p) => p.id === fila.productoId);
+                    const prod = PRODUCTOS_DISPONIBLES.find(
+                      (p) => p.id === fila.productoId
+                    );
                     return (
                       <tr key={fila.id}>
                         <td>{fila.cantidad}</td>
                         <td>{prod ? prod.nombre : ''}</td>
                         <td>${prod ? prod.precio.toLocaleString() : 0}</td>
-                        <td>${prod ? (prod.precio * fila.cantidad).toLocaleString() : 0}</td>
+                        <td>
+                          ${prod ? (prod.precio * fila.cantidad).toLocaleString() : 0}
+                        </td>
                       </tr>
                     );
                   })}
@@ -379,15 +436,15 @@ export default function Calculadora() {
             </div>
 
             <div className={`${styles.pieModal} ${styles.noImprimir}`}>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className={styles.botonImprimir}
                 onClick={imprimirYReiniciar}
               >
                 🖨️ Imprimir / Guardar PDF
               </button>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className={styles.botonCerrarSecundario}
                 onClick={() => setMostrarModal(false)}
               >
@@ -404,11 +461,15 @@ export default function Calculadora() {
           <div className={styles.contenidoModal} onClick={(e) => e.stopPropagation()}>
             <div className={styles.cabeceraModal}>
               <div>
-                <h3 className={styles.resumenFactura}>Detalle de Venta #{ventaSeleccionada.id}</h3>
-                <span className={styles.fechaFactura}>{formatearFecha(ventaSeleccionada.created_at)}</span>
+                <h3 className={styles.resumenFactura}>
+                  Detalle de Venta #{ventaSeleccionada.id}
+                </h3>
+                <span className={styles.fechaFactura}>
+                  {formatearFecha(ventaSeleccionada.created_at)}
+                </span>
               </div>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className={styles.botonCerrarModal}
                 onClick={() => setVentaSeleccionada(null)}
               >
@@ -433,18 +494,28 @@ export default function Calculadora() {
                   </tr>
                 </thead>
                 <tbody>
-                  {ventaSeleccionada.productos && Array.isArray(ventaSeleccionada.productos) ? (
-                    ventaSeleccionada.productos.map((item, idx) => (
-                      <tr key={idx}>
-                        <td>{item.cantidad}</td>
-                        <td>{item.nombre}</td>
-                        <td>${item.precioUnitario ? item.precioUnitario.toLocaleString() : 0}</td>
-                        <td>${item.subtotal ? item.subtotal.toLocaleString() : 0}</td>
-                      </tr>
-                    ))
+                  {ventaSeleccionada.productos &&
+                  Array.isArray(ventaSeleccionada.productos) ? (
+                    ventaSeleccionada.productos.map(
+                      (item: ProductoVenta, idx: number) => (
+                        <tr key={idx}>
+                          <td>{item.cantidad}</td>
+                          <td>{item.nombre}</td>
+                          <td>
+                            $
+                            {item.precioUnitario
+                              ? item.precioUnitario.toLocaleString()
+                              : 0}
+                          </td>
+                          <td>
+                            ${item.subtotal ? item.subtotal.toLocaleString() : 0}
+                          </td>
+                        </tr>
+                      )
+                    )
                   ) : (
                     <tr>
-                      <td colSpan="4">Sin productos detallados.</td>
+                      <td colSpan={4}>Sin productos detallados.</td>
                     </tr>
                   )}
                 </tbody>
@@ -452,13 +523,15 @@ export default function Calculadora() {
 
               <div className={styles.totalFactura}>
                 <span>Total Venta:</span>
-                <strong>${ventaSeleccionada.total ? ventaSeleccionada.total.toLocaleString() : 0}</strong>
+                <strong>
+                  ${ventaSeleccionada.total ? ventaSeleccionada.total.toLocaleString() : 0}
+                </strong>
               </div>
             </div>
 
             <div className={styles.pieModal}>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className={styles.botonCerrarSecundario}
                 onClick={() => setVentaSeleccionada(null)}
               >
