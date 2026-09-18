@@ -411,3 +411,79 @@
     padding-bottom: 10px !important;
   }
 }
+
+/* Pestañas */
+.pestanasContenedor {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  border-bottom: 2px solid #e2e8f0;
+  padding-bottom: 10px;
+}
+
+.botonPestana {
+  background: transparent;
+  border: none;
+  padding: 10px 18px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.botonPestana:hover {
+  background: #f1f5f9;
+  color: #1e293b;
+}
+
+.pestanaActiva {
+  background: #2563eb !important;
+  color: white !important;
+}
+
+/* Historial */
+.seccionHistorial {
+  margin-top: 10px;
+  color: #000;
+}
+
+.textoVacio {
+  text-align: center;
+  color: #64748b;
+  margin-top: 30px;
+}
+
+.tablaHistorial {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 15px;
+}
+
+.tablaHistorial th,
+.tablaHistorial td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.tablaHistorial th {
+  background: #f8fafc;
+  color: #475569;
+  font-size: 0.9rem;
+}
+
+.botonVerDetalle {
+  background: #0284c7;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.botonVerDetalle:hover {
+  background: #0369a1;
+}
