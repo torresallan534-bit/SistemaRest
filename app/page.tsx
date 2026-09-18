@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import styles from './Calculadora.module.css';
 
-// 1. Interfaces para TypeScript
-interface ProductoDisponible {
+// Interfaces TypeScript
+interface Producto {
   id: string;
   nombre: string;
   precio: number;
@@ -33,16 +33,13 @@ interface Venta {
   productos: ProductoVenta[];
 }
 
-const PRODUCTOS_DISPONIBLES: ProductoDisponible[] = [
-  { id: 'prodA', nombre: 'Producto A', precio: 15000 },
-  { id: 'prodB', nombre: 'Producto B', precio: 25000 },
-  { id: 'prodC', nombre: 'Producto C', precio: 18000 },
-  { id: 'prodD', nombre: 'Producto D', precio: 30000 },
-];
-
 export default function Home() {
-  const [pestanaActiva, setPestanaActiva] = useState<'nueva' | 'historial'>('nueva');
+  const [pestanaActiva, setPestanaActiva] = useState<'nueva' | 'historial' | 'menu'>('nueva');
 
+  // Estado de productos cargados dinámicamente desde Supabase
+  const [productos, setProductos] = useState<Producto[]>([]);
+
+  // Estados para formulario de la venta
   const [lineas, setLineas] = useState<LineaFactura[]>([
     { id: 1, productoId: '', cantidad: 1 },
   ]);
@@ -53,23 +50,42 @@ export default function Home() {
     documento: '',
   });
 
-  // Ventas desde Supabase y detalle seleccionado con tipos definidos
+  // Ventas desde Supabase
   const [ventas, setVentas] = useState<Venta[]>([]);
   const [ventaSeleccionada, setVentaSeleccionada] = useState<Venta | null>(null);
 
+  // Estados para gestión del Menú
+  const [nuevoNombre, setNuevoNombre] = useState('');
+  const [nuevoPrecio, setNuevoPrecio] = useState('');
+  const [productoEditando, setProductoEditando] = useState<Producto | null>(null);
+
   useEffect(() => {
+    obtenerProductos();
     obtenerVentas();
   }, []);
 
   useEffect(() => {
     const sumaTotal = lineas.reduce((acc, fila) => {
-      const producto = PRODUCTOS_DISPONIBLES.find((p) => p.id === fila.productoId);
-      const precio = producto ? producto.precio : 0;
+      const prod = productos.find((p) => p.id === fila.productoId);
+      const precio = prod ? prod.precio : 0;
       return acc + precio * fila.cantidad;
     }, 0);
 
     setTotal(sumaTotal);
-  }, [lineas]);
+  }, [lineas, productos]);
+
+  const obtenerProductos = async () => {
+    const { data, error } = await supabase
+      .from('productos')
+      .select('*')
+      .order('nombre', { ascending: true });
+
+    if (error) {
+      console.error('Error al obtener productos:', error.message);
+    } else {
+      setProductos((data as Producto[]) || []);
+    }
+  };
 
   const obtenerVentas = async () => {
     const { data, error } = await supabase
@@ -84,6 +100,61 @@ export default function Home() {
     }
   };
 
+  // Funciones de Gestión de Productos (Agregar, Editar, Eliminar)
+  const guardarProducto = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!nuevoNombre.trim() || !nuevoPrecio) return;
+
+    const precioNumero = parseFloat(nuevoPrecio);
+
+    if (productoEditando) {
+      // Actualizar producto existente
+      const { error } = await supabase
+        .from('productos')
+        .update({ nombre: nuevoNombre, precio: precioNumero })
+        .eq('id', productoEditando.id);
+
+      if (error) alert('Error al actualizar: ' + error.message);
+      setProductoEditando(null);
+    } else {
+      // Crear nuevo producto
+      const { error } = await supabase
+        .from('productos')
+        .insert([{ nombre: nuevoNombre, precio: precioNumero }]);
+
+      if (error) alert('Error al crear: ' + error.message);
+    }
+
+    setNuevoNombre('');
+    setNuevoPrecio('');
+    obtenerProductos();
+  };
+
+  const seleccionarParaEditar = (prod: Producto) => {
+    setProductoEditando(prod);
+    setNuevoNombre(prod.nombre);
+    setNuevoPrecio(prod.precio.toString());
+  };
+
+  const cancelarEdicion = () => {
+    setProductoEditando(null);
+    setNuevoNombre('');
+    setNuevoPrecio('');
+  };
+
+  const eliminarProducto = async (id: string) => {
+    if (!confirm('¿Estás seguro de eliminar este producto del menú?')) return;
+
+    const { error } = await supabase.from('productos').delete().eq('id', id);
+
+    if (error) {
+      alert('Error al eliminar: ' + error.message);
+    } else {
+      obtenerProductos();
+    }
+  };
+
+  // Funciones de la Calculadora / Facturación
   const reiniciarFormulario = () => {
     setCliente({ nombre: '', documento: '' });
     setLineas([{ id: Date.now(), productoId: '', cantidad: 1 }]);
@@ -96,7 +167,7 @@ export default function Home() {
       productos: lineas
         .filter((f) => f.productoId !== '')
         .map((f) => {
-          const prod = PRODUCTOS_DISPONIBLES.find((p) => p.id === f.productoId);
+          const prod = productos.find((p) => p.id === f.productoId);
           return {
             nombre: prod ? prod.nombre : '',
             cantidad: f.cantidad,
@@ -110,7 +181,7 @@ export default function Home() {
     const { error } = await supabase.from('ventas').insert([nuevaVenta]);
 
     if (error) {
-      alert('Error al guardar la venta en la nube: ' + error.message);
+      alert('Error al guardar la venta: ' + error.message);
     } else {
       obtenerVentas();
     }
@@ -168,24 +239,30 @@ export default function Home() {
       <div className={styles.pestanasContenedor}>
         <button
           type="button"
-          className={`${styles.botonPestana} ${
-            pestanaActiva === 'nueva' ? styles.pestanaActiva : ''
-          }`}
+          className={`${styles.botonPestana} ${pestanaActiva === 'nueva' ? styles.pestanaActiva : ''}`}
           onClick={() => setPestanaActiva('nueva')}
         >
           ➕ Nueva Venta
         </button>
         <button
           type="button"
-          className={`${styles.botonPestana} ${
-            pestanaActiva === 'historial' ? styles.pestanaActiva : ''
-          }`}
+          className={`${styles.botonPestana} ${pestanaActiva === 'historial' ? styles.pestanaActiva : ''}`}
           onClick={() => {
             obtenerVentas();
             setPestanaActiva('historial');
           }}
         >
-          📋 Historial de Ventas ({ventas.length})
+          📋 Historial ({ventas.length})
+        </button>
+        <button
+          type="button"
+          className={`${styles.botonPestana} ${pestanaActiva === 'menu' ? styles.pestanaActiva : ''}`}
+          onClick={() => {
+            obtenerProductos();
+            setPestanaActiva('menu');
+          }}
+        >
+          🍔 Menú / Productos ({productos.length})
         </button>
       </div>
 
@@ -194,11 +271,7 @@ export default function Home() {
         <>
           <div className={styles.cabeceraContenedor}>
             <h2 className={styles.titulo}>Calculadora de Precios</h2>
-            <button
-              type="button"
-              className={styles.botonReiniciar}
-              onClick={reiniciarFormulario}
-            >
+            <button type="button" className={styles.botonReiniciar} onClick={reiniciarFormulario}>
               🔄 Limpiar todo
             </button>
           </div>
@@ -231,9 +304,7 @@ export default function Home() {
 
           <div className={styles.listaFilas}>
             {lineas.map((fila, index) => {
-              const productoSeleccionado = PRODUCTOS_DISPONIBLES.find(
-                (p) => p.id === fila.productoId
-              );
+              const productoSeleccionado = productos.find((p) => p.id === fila.productoId);
               const subtotalFila = productoSeleccionado
                 ? productoSeleccionado.precio * fila.cantidad
                 : 0;
@@ -248,7 +319,7 @@ export default function Home() {
                       onChange={(e) => actualizarProducto(index, e.target.value)}
                     >
                       <option value="">-- Seleccionar --</option>
-                      {PRODUCTOS_DISPONIBLES.map((prod) => (
+                      {productos.map((prod) => (
                         <option key={prod.id} value={prod.id}>
                           {prod.nombre} (${prod.precio.toLocaleString()})
                         </option>
@@ -280,9 +351,7 @@ export default function Home() {
 
                   <div className={styles.columnaSubtotal}>
                     <span className={styles.label}>Subtotal</span>
-                    <span className={styles.montoSubtotal}>
-                      ${subtotalFila.toLocaleString()}
-                    </span>
+                    <span className={styles.montoSubtotal}>${subtotalFila.toLocaleString()}</span>
                   </div>
 
                   {lineas.length > 1 && (
@@ -363,7 +432,97 @@ export default function Home() {
         </div>
       )}
 
-      {/* MODAL IMPRIMIR FACTURA (NUEVA VENTA) */}
+      {/* PESTAÑA 3: GESTIÓN DE PRODUCTOS DEL MENÚ */}
+      {pestanaActiva === 'menu' && (
+        <div className={styles.seccionHistorial}>
+          <h2 className={styles.titulo}>Gestión del Menú de Productos</h2>
+
+          {/* Formulario para agregar / editar producto */}
+          <form onSubmit={guardarProducto} style={{ marginBottom: '25px' }}>
+            <h4 className={styles.subtituloSeccion}>
+              {productoEditando ? '✏️ Editar Producto' : '➕ Agregar Nuevo Producto'}
+            </h4>
+            <div className={styles.gridCliente}>
+              <div>
+                <label className={styles.label}>Nombre del Producto</label>
+                <input
+                  type="text"
+                  className={styles.input}
+                  placeholder="Ej: Hamburguesa Especial"
+                  value={nuevoNombre}
+                  onChange={(e) => setNuevoNombre(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label className={styles.label}>Precio ($)</label>
+                <input
+                  type="number"
+                  className={styles.input}
+                  placeholder="Ej: 22000"
+                  value={nuevoPrecio}
+                  onChange={(e) => setNuevoPrecio(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+              <button type="submit" className={styles.botonVerDetalle}>
+                {productoEditando ? 'Guardar Cambios' : '➕ Agregar al Menú'}
+              </button>
+              {productoEditando && (
+                <button
+                  type="button"
+                  className={styles.botonReiniciar}
+                  onClick={cancelarEdicion}
+                >
+                  Cancelar
+                </button>
+              )}
+            </div>
+          </form>
+
+          {/* Tabla de Productos del Menú */}
+          <table className={styles.tablaHistorial}>
+            <thead>
+              <tr>
+                <th>Nombre del Producto</th>
+                <th>Precio</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {productos.map((p) => (
+                <tr key={p.id}>
+                  <td>
+                    <strong>{p.nombre}</strong>
+                  </td>
+                  <td>${p.precio.toLocaleString()}</td>
+                  <td style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      className={styles.botonVerDetalle}
+                      onClick={() => seleccionarParaEditar(p)}
+                    >
+                      ✏️ Editar
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.botonEliminar}
+                      onClick={() => eliminarProducto(p.id)}
+                      style={{ position: 'static' }}
+                    >
+                      🗑️ Eliminar
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* MODAL FACTURA Y DETALLES */}
       {mostrarModal && (
         <div className={styles.overlayModal} onClick={() => setMostrarModal(false)}>
           <div className={styles.contenidoModal} onClick={(e) => e.stopPropagation()}>
@@ -412,9 +571,7 @@ export default function Home() {
                 </thead>
                 <tbody>
                   {productosValidos.map((fila) => {
-                    const prod = PRODUCTOS_DISPONIBLES.find(
-                      (p) => p.id === fila.productoId
-                    );
+                    const prod = productos.find((p) => p.id === fila.productoId);
                     return (
                       <tr key={fila.id}>
                         <td>{fila.cantidad}</td>
@@ -455,7 +612,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* MODAL VER DETALLE DE VENTA GUARDADA */}
+      {/* MODAL DETALLE DE VENTA */}
       {ventaSeleccionada && (
         <div className={styles.overlayModal} onClick={() => setVentaSeleccionada(null)}>
           <div className={styles.contenidoModal} onClick={(e) => e.stopPropagation()}>
@@ -496,23 +653,16 @@ export default function Home() {
                 <tbody>
                   {ventaSeleccionada.productos &&
                   Array.isArray(ventaSeleccionada.productos) ? (
-                    ventaSeleccionada.productos.map(
-                      (item: ProductoVenta, idx: number) => (
-                        <tr key={idx}>
-                          <td>{item.cantidad}</td>
-                          <td>{item.nombre}</td>
-                          <td>
-                            $
-                            {item.precioUnitario
-                              ? item.precioUnitario.toLocaleString()
-                              : 0}
-                          </td>
-                          <td>
-                            ${item.subtotal ? item.subtotal.toLocaleString() : 0}
-                          </td>
-                        </tr>
-                      )
-                    )
+                    ventaSeleccionada.productos.map((item: ProductoVenta, idx: number) => (
+                      <tr key={idx}>
+                        <td>{item.cantidad}</td>
+                        <td>{item.nombre}</td>
+                        <td>
+                          ${item.precioUnitario ? item.precioUnitario.toLocaleString() : 0}
+                        </td>
+                        <td>${item.subtotal ? item.subtotal.toLocaleString() : 0}</td>
+                      </tr>
+                    ))
                   ) : (
                     <tr>
                       <td colSpan={4}>Sin productos detallados.</td>
