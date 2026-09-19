@@ -4,7 +4,15 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import styles from './Calculadora.module.css';
 
-interface Perfil { id: string; nombre_local: string; documento: string; telefono?: string; direccion?: string; }
+interface Perfil { 
+  id: string; 
+  nombre_persona: string;
+  nombre_local: string; 
+  documento: string; 
+  telefono: string; 
+  direccion: string; 
+}
+
 interface Producto { id: string; nombre: string; precio: number; user_id?: string; }
 interface Insumo { id: string; nombre: string; unidad: string; stock_actual: number; user_id?: string; }
 interface RecetaItem { id: string; producto_id: string; insumo_id: string; cantidad_requerida: number; user_id?: string; }
@@ -18,12 +26,16 @@ export default function Home() {
   // Autenticación y Perfil
   const [usuario, setUsuario] = useState<any>(null);
   const [perfil, setPerfil] = useState<Perfil | null>(null);
-  const [emailInput, setEmailInput] = useState('');
-  const [passwordInput, setPasswordInput] = useState('');
+  
+  // Campos del Formulario de Registro
+  const [nombrePersonaInput, setNombrePersonaInput] = useState('');
   const [nombreLocalInput, setNombreLocalInput] = useState('');
   const [documentoLocalInput, setDocumentoLocalInput] = useState('');
-  const [telefonoLocalInput, setTelefonoLocalInput] = useState('');
   const [direccionLocalInput, setDireccionLocalInput] = useState('');
+  const [telefonoLocalInput, setTelefonoLocalInput] = useState('');
+  const [emailInput, setEmailInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  
   const [esRegistro, setEsRegistro] = useState(false);
   const [cargandoAuth, setCargandoAuth] = useState(true);
 
@@ -108,8 +120,8 @@ export default function Home() {
     if (!emailInput || !passwordInput) return alert('Completa correo y contraseña');
 
     if (esRegistro) {
-      if (!nombreLocalInput || !documentoLocalInput) {
-        return alert('Ingresa el nombre del local y el documento');
+      if (!nombrePersonaInput || !nombreLocalInput || !documentoLocalInput || !direccionLocalInput || !telefonoLocalInput) {
+        return alert('Por favor completa todos los campos del registro para personalizar tu factura');
       }
 
       const { data, error } = await supabase.auth.signUp({
@@ -123,10 +135,11 @@ export default function Home() {
         await supabase.from('perfiles').insert([
           {
             id: data.user.id,
+            nombre_persona: nombrePersonaInput,
             nombre_local: nombreLocalInput,
             documento: documentoLocalInput,
-            telefono: telefonoLocalInput || 'N/A',
-            direccion: direccionLocalInput || 'N/A',
+            direccion: direccionLocalInput,
+            telefono: telefonoLocalInput,
           },
         ]);
 
@@ -194,7 +207,6 @@ export default function Home() {
   const obtenerMesas = async (uId: string) => {
     const { data } = await supabase.from('mesas').select('*').eq('user_id', uId).order('nombre', { ascending: true });
     
-    // Si no existen mesas para el usuario, creamos 5 mesas por defecto
     if (data && data.length === 0) {
       const mesasIniciales = [
         { nombre: 'Mesa 1', user_id: uId },
@@ -264,7 +276,6 @@ export default function Home() {
     alert('Comanda guardada');
   };
 
-  // Pre-cobro: Abre el modal con preview de la factura
   const abrirModalCobrar = () => {
     if (!mesaSeleccionada) return;
     const productosValidos = lineasMesa.filter((f) => f.productoId !== '');
@@ -275,7 +286,6 @@ export default function Home() {
     setMostrarModalCobro(true);
   };
 
-  // Confirmar Venta Final
   const finalizarYCobrarVenta = async () => {
     if (!mesaSeleccionada || !usuario) return;
 
@@ -293,7 +303,6 @@ export default function Home() {
 
     const totalCalculado = productosDetalle.reduce((acc, item) => acc + item.subtotal, 0);
 
-    // Validar efectivo
     if (metodoPago === 'Efectivo') {
       const pagaConNum = parseFloat(montoPagaCon) || 0;
       if (pagaConNum < totalCalculado) {
@@ -301,7 +310,6 @@ export default function Home() {
       }
     }
 
-    // Descontar inventario
     for (const f of lineasMesa.filter((item) => item.productoId !== '')) {
       const ingredientes = recetas.filter((r) => r.producto_id === f.productoId);
       for (const ing of ingredientes) {
@@ -328,7 +336,6 @@ export default function Home() {
     if (error) {
       alert('Error al registrar la venta: ' + error.message);
     } else if (ventaGuardada && ventaGuardada[0]) {
-      // Liberar Mesa
       await supabase.from('mesas').update({ pedidos: [], estado: 'libre' }).eq('id', mesaSeleccionada.id);
 
       setVentaConfirmadaTicket(ventaGuardada[0] as Venta);
@@ -485,18 +492,29 @@ export default function Home() {
   // LOGIN / REGISTRO
   if (!usuario) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: '#0f172a', fontFamily: 'sans-serif' }}>
-        <div style={{ background: 'white', padding: '32px', borderRadius: '16px', border: '2px solid #cbd5e1', maxWidth: '440px', width: '90%', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)' }}>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: '#0f172a', fontFamily: 'sans-serif', padding: '20px 0' }}>
+        <div style={{ background: 'white', padding: '32px', borderRadius: '16px', border: '2px solid #cbd5e1', maxWidth: '460px', width: '90%', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)' }}>
           <h2 style={{ margin: '0 0 6px', color: '#0f172a', textAlign: 'center' }}>🍽️ RestoPOS Pro</h2>
           <p style={{ margin: '0 0 20px', color: '#475569', textAlign: 'center', fontSize: '14px', fontWeight: '500' }}>
-            {esRegistro ? 'Registra tu negocio y personaliza tus facturas' : 'Inicia sesión para continuar'}
+            {esRegistro ? 'Completa los datos de tu negocio para la facturación' : 'Inicia sesión para continuar'}
           </p>
 
           <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {esRegistro && (
               <>
                 <div>
-                  <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>Nombre del Local / Restaurante</label>
+                  <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>Nombre de la Persona (Propietario)</label>
+                  <input
+                    type="text"
+                    placeholder="Ej: Carlos Mendoza"
+                    value={nombrePersonaInput}
+                    onChange={(e) => setNombrePersonaInput(e.target.value)}
+                    style={{ width: '100%', padding: '10px', border: '1.5px solid #64748b', borderRadius: '8px', color: '#0f172a', fontSize: '14px', boxSizing: 'border-box' }}
+                    required
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>Nombre del Negocio / Local</label>
                   <input
                     type="text"
                     placeholder="Ej: Hamburguesas El Valle"
@@ -507,7 +525,7 @@ export default function Home() {
                   />
                 </div>
                 <div>
-                  <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>NIT / Cédula del Negocio</label>
+                  <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>NIT o Cédula</label>
                   <input
                     type="text"
                     placeholder="Ej: 901.234.567-1"
@@ -518,23 +536,25 @@ export default function Home() {
                   />
                 </div>
                 <div>
-                  <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>Teléfono de Contacto</label>
-                  <input
-                    type="text"
-                    placeholder="Ej: 300 123 4567"
-                    value={telefonoLocalInput}
-                    onChange={(e) => setTelefonoLocalInput(e.target.value)}
-                    style={{ width: '100%', padding: '10px', border: '1.5px solid #64748b', borderRadius: '8px', color: '#0f172a', fontSize: '14px', boxSizing: 'border-box' }}
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>Dirección</label>
+                  <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>Dirección del Local</label>
                   <input
                     type="text"
                     placeholder="Ej: Calle 45 # 12 - 34"
                     value={direccionLocalInput}
                     onChange={(e) => setDireccionLocalInput(e.target.value)}
                     style={{ width: '100%', padding: '10px', border: '1.5px solid #64748b', borderRadius: '8px', color: '#0f172a', fontSize: '14px', boxSizing: 'border-box' }}
+                    required
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>Número de Teléfono</label>
+                  <input
+                    type="text"
+                    placeholder="Ej: 300 123 4567"
+                    value={telefonoLocalInput}
+                    onChange={(e) => setTelefonoLocalInput(e.target.value)}
+                    style={{ width: '100%', padding: '10px', border: '1.5px solid #64748b', borderRadius: '8px', color: '#0f172a', fontSize: '14px', boxSizing: 'border-box' }}
+                    required
                   />
                 </div>
               </>
@@ -1034,15 +1054,16 @@ export default function Home() {
         </div>
       )}
 
-      {/* MODAL DE PROCESO DE COBRO (PREVIEW + MÉTODOS Y CAMBIO) */}
+      {/* MODAL COBRO CON ENCABEZADO DE FACTURA COMPLETO */}
       {mostrarModalCobro && mesaSeleccionada && (
         <div className={styles.overlayModal} onClick={() => setMostrarModalCobro(false)}>
           <div className={styles.modalCobroGrandote} onClick={(e) => e.stopPropagation()}>
             <div className={styles.columnaPreviewFactura}>
               <div style={{ textAlign: 'center', borderBottom: '2px dashed #cbd5e1', paddingBottom: '8px', marginBottom: '8px' }}>
-                <h3 style={{ margin: 0 }}>{perfil?.nombre_local || 'Mi Negocio'}</h3>
-                <p style={{ margin: 0, fontSize: '12px', color: '#475569' }}>NIT/CC: {perfil?.documento || 'N/A'}</p>
-                <p style={{ margin: 0, fontSize: '12px', color: '#475569' }}>Tel: {perfil?.telefono} | {perfil?.direccion}</p>
+                <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>{perfil?.nombre_local || 'Mi Negocio'}</h3>
+                <p style={{ margin: '2px 0', fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>Propietario: {perfil?.nombre_persona || 'N/A'}</p>
+                <p style={{ margin: '2px 0', fontSize: '12px', color: '#475569' }}>NIT / CC: {perfil?.documento || 'N/A'}</p>
+                <p style={{ margin: '2px 0', fontSize: '12px', color: '#475569' }}>Dir: {perfil?.direccion} | Tel: {perfil?.telefono}</p>
               </div>
 
               <p style={{ fontSize: '13px', margin: '4px 0' }}><strong>Mesa:</strong> {mesaSeleccionada.nombre}</p>
@@ -1069,7 +1090,7 @@ export default function Home() {
                 </tbody>
               </table>
 
-              <div style={{ display: 'flex', justifyBetween: 'space-between', fontSize: '18px', fontWeight: 'bold', borderTop: '2px dashed #0f172a', paddingTop: '8px', marginTop: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '18px', fontWeight: 'bold', borderTop: '2px dashed #0f172a', paddingTop: '8px', marginTop: '12px' }}>
                 <span>TOTAL A PAGAR:</span>
                 <strong style={{ color: '#16a34a' }}>${totalCalculadoMesa.toLocaleString()}</strong>
               </div>
@@ -1138,15 +1159,16 @@ export default function Home() {
         </div>
       )}
 
-      {/* MODAL TICKET CONFIRMADO E IMPRESIÓN */}
+      {/* MODAL TICKET CONFIRMADO PARA IMPRESIÓN */}
       {(ventaConfirmadaTicket || ventaSeleccionada) && (
         <div className={styles.overlayModal} onClick={() => { setVentaConfirmadaTicket(null); setVentaSeleccionada(null); }}>
           <div className={styles.modalContentTicket} onClick={(e) => e.stopPropagation()}>
             <div className={styles.ticketImpresionArea}>
               <div style={{ textAlign: 'center', borderBottom: '2px dashed #0f172a', paddingBottom: '8px', marginBottom: '8px' }}>
-                <h2 style={{ margin: 0 }}>{perfil?.nombre_local || 'Mi Negocio'}</h2>
+                <h2 style={{ margin: 0, fontSize: '20px' }}>{perfil?.nombre_local || 'Mi Negocio'}</h2>
+                <p style={{ margin: '2px 0', fontSize: '12px', fontWeight: 'bold' }}>Propietario: {perfil?.nombre_persona || 'N/A'}</p>
                 <p style={{ margin: '2px 0', fontSize: '12px' }}>NIT / CC: {perfil?.documento || 'N/A'}</p>
-                <p style={{ margin: '2px 0', fontSize: '12px' }}>Tel: {perfil?.telefono} | {perfil?.direccion}</p>
+                <p style={{ margin: '2px 0', fontSize: '12px' }}>Dir: {perfil?.direccion} | Tel: {perfil?.telefono}</p>
                 <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#64748b' }}>{formatearFecha((ventaConfirmadaTicket || ventaSeleccionada)!.created_at)}</p>
               </div>
 
