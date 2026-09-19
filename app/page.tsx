@@ -4,20 +4,24 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import styles from './Calculadora.module.css';
 
-interface Producto { id: string; nombre: string; precio: number; }
-interface Insumo { id: string; nombre: string; unidad: string; stock_actual: number; }
-interface RecetaItem { id: string; producto_id: string; insumo_id: string; cantidad_requerida: number; }
+interface Perfil { id: string; nombre_local: string; documento: string; telefono?: string; direccion?: string; }
+interface Producto { id: string; nombre: string; precio: number; user_id?: string; }
+interface Insumo { id: string; nombre: string; unidad: string; stock_actual: number; user_id?: string; }
+interface RecetaItem { id: string; producto_id: string; insumo_id: string; cantidad_requerida: number; user_id?: string; }
 interface LineaFactura { id: number; productoId: string; cantidad: number; }
 interface ProductoVenta { nombre: string; cantidad: number; precioUnitario: number; subtotal: number; }
-interface Venta { id: number; created_at: string; cliente: string; documento: string; metodo_pago: string; total: number; productos: ProductoVenta[]; cierre_id?: string; }
-interface Mesa { id: string; nombre: string; estado: 'libre' | 'ocupada'; pedidos: LineaFactura[]; }
-interface CierreCaja { id: string; fecha: string; base_inicial: number; total_sistema: number; efectivo_sistema: number; tarjeta_sistema: number; transferencia_sistema: number; efectivo_real: number; tarjeta_real: number; transferencia_real: number; diferencia_efectivo: number; diferencia_tarjeta: number; diferencia_transferencia: number; }
+interface Venta { id: number; created_at: string; cliente: string; documento: string; metodo_pago: string; total: number; productos: ProductoVenta[]; cierre_id?: string; user_id?: string; }
+interface Mesa { id: string; nombre: string; estado: 'libre' | 'ocupada'; pedidos: LineaFactura[]; user_id?: string; }
+interface CierreCaja { id: string; fecha: string; base_inicial: number; total_sistema: number; efectivo_sistema: number; tarjeta_sistema: number; transferencia_sistema: number; efectivo_real: number; tarjeta_real: number; transferencia_real: number; diferencia_efectivo: number; diferencia_tarjeta: number; diferencia_transferencia: number; user_id?: string; }
 
 export default function Home() {
-  // Autenticación
+  // Autenticación y Perfil
   const [usuario, setUsuario] = useState<any>(null);
+  const [perfil, setPerfil] = useState<Perfil | null>(null);
   const [emailInput, setEmailInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
+  const [nombreLocalInput, setNombreLocalInput] = useState('');
+  const [documentoLocalInput, setDocumentoLocalInput] = useState('');
   const [esRegistro, setEsRegistro] = useState(false);
   const [cargandoAuth, setCargandoAuth] = useState(true);
 
@@ -27,7 +31,7 @@ export default function Home() {
   const [subPestanaProduccion, setSubPestanaProduccion] = useState<'inventario' | 'recetas' | 'productos'>('inventario');
   const [subPestanaHistorial, setSubPestanaHistorial] = useState<'ventas' | 'cierres'>('ventas');
 
-  // Datos principales
+  // Datos del Usuario
   const [productos, setProductos] = useState<Producto[]>([]);
   const [insumos, setInsumos] = useState<Insumo[]>([]);
   const [recetas, setRecetas] = useState<RecetaItem[]>([]);
@@ -71,7 +75,6 @@ export default function Home() {
   const [ventaSeleccionada, setVentaSeleccionada] = useState<Venta | null>(null);
   const [cierreFiltroSeleccionado, setCierreFiltroSeleccionado] = useState<string>('abierta');
 
-  // Verificar sesión al cargar
   useEffect(() => {
     verificarSesion();
   }, []);
@@ -81,11 +84,17 @@ export default function Home() {
     const { data } = await supabase.auth.getSession();
     if (data.session) {
       setUsuario(data.session.user);
-      cargarTodo();
+      await cargarPerfil(data.session.user.id);
+      await cargarTodo(data.session.user.id);
     } else {
       setUsuario(null);
     }
     setCargandoAuth(false);
+  };
+
+  const cargarPerfil = async (userId: string) => {
+    const { data } = await supabase.from('perfiles').select('*').eq('id', userId).single();
+    if (data) setPerfil(data as Perfil);
   };
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -93,25 +102,44 @@ export default function Home() {
     if (!emailInput || !passwordInput) return alert('Completa correo y contraseña');
 
     if (esRegistro) {
+      if (!nombreLocalInput || !documentoLocalInput) {
+        return alert('Ingresa el nombre del local y el documento para personalizar la factura');
+      }
+
       const { data, error } = await supabase.auth.signUp({
         email: emailInput,
         password: passwordInput,
       });
-      if (error) alert('Error en registro: ' + error.message);
-      else {
-        alert('Registro exitoso. ¡Iniciando sesión!');
+
+      if (error) {
+        alert('Error en registro: ' + error.message);
+      } else if (data.user) {
+        // Guardar Perfil del negocio
+        await supabase.from('perfiles').insert([
+          {
+            id: data.user.id,
+            nombre_local: nombreLocalInput,
+            documento: documentoLocalInput,
+          },
+        ]);
+
+        alert('¡Registro exitoso!');
         setUsuario(data.user);
-        cargarTodo();
+        await cargarPerfil(data.user.id);
+        await cargarTodo(data.user.id);
       }
     } else {
       const { data, error } = await supabase.auth.signInWithPassword({
         email: emailInput,
         password: passwordInput,
       });
-      if (error) alert('Error de acceso: ' + error.message);
-      else {
+
+      if (error) {
+        alert('Error de acceso: ' + error.message);
+      } else if (data.user) {
         setUsuario(data.user);
-        cargarTodo();
+        await cargarPerfil(data.user.id);
+        await cargarTodo(data.user.id);
       }
     }
   };
@@ -119,46 +147,50 @@ export default function Home() {
   const cerrarSesion = async () => {
     await supabase.auth.signOut();
     setUsuario(null);
+    setPerfil(null);
   };
 
-  const cargarTodo = async () => {
+  const cargarTodo = async (userId?: string) => {
+    const uId = userId || usuario?.id;
+    if (!uId) return;
+
     await Promise.all([
-      obtenerProductos(),
-      obtenerInsumos(),
-      obtenerRecetas(),
-      obtenerVentas(),
-      obtenerMesas(),
-      obtenerCierres(),
+      obtenerProductos(uId),
+      obtenerInsumos(uId),
+      obtenerRecetas(uId),
+      obtenerVentas(uId),
+      obtenerMesas(uId),
+      obtenerCierres(uId),
     ]);
   };
 
-  const obtenerProductos = async () => {
-    const { data } = await supabase.from('productos').select('*').order('nombre', { ascending: true });
+  const obtenerProductos = async (uId: string) => {
+    const { data } = await supabase.from('productos').select('*').eq('user_id', uId).order('nombre', { ascending: true });
     if (data) setProductos(data as Producto[]);
   };
 
-  const obtenerInsumos = async () => {
-    const { data } = await supabase.from('insumos').select('*').order('nombre', { ascending: true });
+  const obtenerInsumos = async (uId: string) => {
+    const { data } = await supabase.from('insumos').select('*').eq('user_id', uId).order('nombre', { ascending: true });
     if (data) setInsumos(data as Insumo[]);
   };
 
-  const obtenerRecetas = async () => {
-    const { data } = await supabase.from('recetas').select('*');
+  const obtenerRecetas = async (uId: string) => {
+    const { data } = await supabase.from('recetas').select('*').eq('user_id', uId);
     if (data) setRecetas(data as RecetaItem[]);
   };
 
-  const obtenerVentas = async () => {
-    const { data } = await supabase.from('ventas').select('*').order('created_at', { ascending: false });
+  const obtenerVentas = async (uId: string) => {
+    const { data } = await supabase.from('ventas').select('*').eq('user_id', uId).order('created_at', { ascending: false });
     if (data) setVentas(data as Venta[]);
   };
 
-  const obtenerMesas = async () => {
-    const { data } = await supabase.from('mesas').select('*').order('nombre', { ascending: true });
+  const obtenerMesas = async (uId: string) => {
+    const { data } = await supabase.from('mesas').select('*').eq('user_id', uId).order('nombre', { ascending: true });
     if (data) setMesas(data as Mesa[]);
   };
 
-  const obtenerCierres = async () => {
-    const { data } = await supabase.from('cierres_caja').select('*').order('fecha', { ascending: false });
+  const obtenerCierres = async (uId: string) => {
+    const { data } = await supabase.from('cierres_caja').select('*').eq('user_id', uId).order('fecha', { ascending: false });
     if (data) setCierres(data as CierreCaja[]);
   };
 
@@ -178,43 +210,40 @@ export default function Home() {
     const baseNum = parseFloat(baseEfectivoInput) || 0;
     setBaseEfectivoJornada(baseNum);
     setCajaAbierta(true);
-    alert(`Caja abierta exitosamente con una base inicial de $${baseNum.toLocaleString()}`);
+    alert(`Caja abierta con base de $${baseNum.toLocaleString()}`);
   };
 
   const seleccionarMesa = (m: Mesa) => {
-    if (!cajaAbierta) {
-      alert('⚠️ Debes realizar la apertura de caja antes de atender mesas.');
-      return;
-    }
+    if (!cajaAbierta) return alert('⚠️ Debes realizar la apertura de caja primero.');
     setMesaSeleccionada(m);
     setLineasMesa(m.pedidos || []);
   };
 
   const agregarMesa = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nuevoNombreMesa.trim()) return;
-    await supabase.from('mesas').insert([{ nombre: nuevoNombreMesa }]);
+    if (!nuevoNombreMesa.trim() || !usuario) return;
+    await supabase.from('mesas').insert([{ nombre: nuevoNombreMesa, user_id: usuario.id }]);
     setNuevoNombreMesa('');
-    obtenerMesas();
+    obtenerMesas(usuario.id);
   };
 
   const eliminarMesa = async (id: string) => {
     if (!confirm('¿Eliminar esta mesa?')) return;
     await supabase.from('mesas').delete().eq('id', id);
     if (mesaSeleccionada?.id === id) setMesaSeleccionada(null);
-    obtenerMesas();
+    if (usuario) obtenerMesas(usuario.id);
   };
 
   const guardarPedidoMesa = async () => {
-    if (!mesaSeleccionada) return;
+    if (!mesaSeleccionada || !usuario) return;
     const estado = lineasMesa.length > 0 ? 'ocupada' : 'libre';
     await supabase.from('mesas').update({ pedidos: lineasMesa, estado }).eq('id', mesaSeleccionada.id);
-    obtenerMesas();
+    obtenerMesas(usuario.id);
     alert('Comanda guardada');
   };
 
   const cobrarMesa = async () => {
-    if (!mesaSeleccionada) return;
+    if (!mesaSeleccionada || !usuario) return;
     const productosValidos = lineasMesa
       .filter((f) => f.productoId !== '')
       .map((f) => {
@@ -250,6 +279,7 @@ export default function Home() {
       metodo_pago: metodoPago,
       productos: productosValidos.map(({ productoId, ...resto }) => resto),
       total: totalCobrar,
+      user_id: usuario.id,
     };
 
     await supabase.from('ventas').insert([nuevaVenta]);
@@ -257,12 +287,13 @@ export default function Home() {
 
     setLineasMesa([]);
     setMesaSeleccionada(null);
-    await cargarTodo();
+    await cargarTodo(usuario.id);
     setMostrarModalFactura(true);
   };
 
   const realizarCierreCaja = async () => {
-    if (!confirm('¿Seguro de realizar el cierre de caja? Esto dará por finalizada la jornada laboral.')) return;
+    if (!usuario) return;
+    if (!confirm('¿Seguro de realizar el cierre de caja? Esto finalizará la jornada laboral.')) return;
 
     const efReal = parseFloat(efectivoReal) || 0;
     const tarReal = parseFloat(tarjetaReal) || 0;
@@ -280,6 +311,7 @@ export default function Home() {
       diferencia_efectivo: efReal - efectivoEsperadoEnCaja,
       diferencia_tarjeta: tarReal - totalTarjetaHoy,
       diferencia_transferencia: transReal - totalTransferenciaHoy,
+      user_id: usuario.id,
     };
 
     const { data: cierreGuardado, error } = await supabase.from('cierres_caja').insert([cierre]).select();
@@ -299,28 +331,26 @@ export default function Home() {
       setBaseEfectivoInput('');
       setEfectivoReal(''); setTarjetaReal(''); setTransferenciaReal('');
       setMesaSeleccionada(null);
-      await cargarTodo();
+      await cargarTodo(usuario.id);
     }
   };
 
   const eliminarVenta = async (id: number) => {
-    if (!confirm(`¿Estás seguro de eliminar la venta #${id}?`)) return;
-    const { error } = await supabase.from('ventas').delete().eq('id', id);
-    if (error) alert('Error al eliminar venta: ' + error.message);
-    else obtenerVentas();
+    if (!confirm(`¿Eliminar la venta #${id}?`)) return;
+    await supabase.from('ventas').delete().eq('id', id);
+    if (usuario) obtenerVentas(usuario.id);
   };
 
   const eliminarCierre = async (cierreId: string) => {
-    if (!confirm('¿Seguro de eliminar este cierre de caja? Las ventas volverán a quedar abiertas.')) return;
+    if (!confirm('¿Eliminar cierre de caja?')) return;
     await supabase.from('ventas').update({ cierre_id: null }).eq('cierre_id', cierreId);
-    const { error } = await supabase.from('cierres_caja').delete().eq('id', cierreId);
-    if (error) alert('Error al eliminar el cierre: ' + error.message);
-    else cargarTodo();
+    await supabase.from('cierres_caja').delete().eq('id', cierreId);
+    if (usuario) cargarTodo(usuario.id);
   };
 
   const guardarRecetaMultiple = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!prodRecetaSel) return alert('Selecciona un producto');
+    if (!prodRecetaSel || !usuario) return alert('Selecciona un producto');
 
     const inserciones = lineasReceta
       .filter((l) => l.insumo_id && l.cantidad_requerida)
@@ -328,6 +358,7 @@ export default function Home() {
         producto_id: prodRecetaSel,
         insumo_id: l.insumo_id,
         cantidad_requerida: parseFloat(l.cantidad_requerida),
+        user_id: usuario.id,
       }));
 
     if (inserciones.length === 0) return alert('Agrega al menos un insumo');
@@ -335,49 +366,50 @@ export default function Home() {
     await supabase.from('recetas').insert(inserciones);
     setProdRecetaSel('');
     setLineasReceta([{ insumo_id: '', cantidad_requerida: '' }]);
-    obtenerRecetas();
+    obtenerRecetas(usuario.id);
   };
 
   const editarCantidadReceta = async (id: string) => {
-    if (!cantEditandoVal) return;
+    if (!cantEditandoVal || !usuario) return;
     await supabase.from('recetas').update({ cantidad_requerida: parseFloat(cantEditandoVal) }).eq('id', id);
-    setRecetaEditandoId(null);
-    setCantEditandoVal('');
-    obtenerRecetas();
+    setRecetaEditandoId(null); setCantEditandoVal('');
+    obtenerRecetas(usuario.id);
   };
 
   const eliminarRecetaItem = async (id: string) => {
     if (!confirm('¿Eliminar ingrediente?')) return;
     await supabase.from('recetas').delete().eq('id', id);
-    obtenerRecetas();
+    if (usuario) obtenerRecetas(usuario.id);
   };
 
   const guardarInsumo = async (e: React.FormEvent) => {
     e.preventDefault();
-    await supabase.from('insumos').insert([{ nombre: nuevoInsumoNombre, unidad: nuevoInsumoUnidad, stock_actual: parseFloat(nuevoInsumoStock) }]);
+    if (!usuario) return;
+    await supabase.from('insumos').insert([{ nombre: nuevoInsumoNombre, unidad: nuevoInsumoUnidad, stock_actual: parseFloat(nuevoInsumoStock), user_id: usuario.id }]);
     setNuevoInsumoNombre(''); setNuevoInsumoStock('');
-    obtenerInsumos();
+    obtenerInsumos(usuario.id);
   };
 
   const guardarProducto = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!usuario) return;
     const precioNum = parseFloat(nuevoPrecio);
     if (productoEditando) {
       await supabase.from('productos').update({ nombre: nuevoNombre, precio: precioNum }).eq('id', productoEditando.id);
       setProductoEditando(null);
     } else {
-      await supabase.from('productos').insert([{ nombre: nuevoNombre, precio: precioNum }]);
+      await supabase.from('productos').insert([{ nombre: nuevoNombre, precio: precioNum, user_id: usuario.id }]);
     }
     setNuevoNombre(''); setNuevoPrecio('');
-    obtenerProductos();
+    obtenerProductos(usuario.id);
   };
 
   const actualizarStockFisico = async (insumoId: string) => {
     const valor = conteosFisicos[insumoId];
-    if (!valor) return;
+    if (!valor || !usuario) return;
     await supabase.from('insumos').update({ stock_actual: parseFloat(valor) }).eq('id', insumoId);
     setConteosFisicos((prev) => ({ ...prev, [insumoId]: '' }));
-    obtenerInsumos();
+    obtenerInsumos(usuario.id);
   };
 
   const formatearFecha = (fechaISO: string) => new Date(fechaISO).toLocaleDateString('es-CO', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -391,7 +423,6 @@ export default function Home() {
     ? ventas.filter((v) => !v.cierre_id)
     : ventas.filter((v) => v.cierre_id === cierreFiltroSeleccionado);
 
-  // SI ESTÁ CARGANDO AUTH
   if (cargandoAuth) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', fontFamily: 'sans-serif' }}>
@@ -400,54 +431,81 @@ export default function Home() {
     );
   }
 
-  // PANTALLA DE LOGIN
+  // PANTALLA LOGIN / REGISTRO
   if (!usuario) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: '#0f172a', fontFamily: 'sans-serif' }}>
-        <div style={{ background: 'white', padding: '32px', borderRadius: '16px', border: '2px solid #cbd5e1', maxWidth: '400px', width: '90%', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)' }}>
-          <h2 style={{ margin: '0 0 8px', color: '#0f172a', textAlign: 'center' }}>🍽️ RestoPOS Pro</h2>
-          <p style={{ margin: '0 0 24px', color: '#64748b', textAlign: 'center', fontSize: '14px' }}>
-            {esRegistro ? 'Crea una cuenta para tu negocio' : 'Inicia sesión para continuar'}
+        <div style={{ background: 'white', padding: '32px', borderRadius: '16px', border: '2px solid #cbd5e1', maxWidth: '420px', width: '90%', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)' }}>
+          <h2 style={{ margin: '0 0 6px', color: '#0f172a', textAlign: 'center' }}>🍽️ RestoPOS Pro</h2>
+          <p style={{ margin: '0 0 20px', color: '#475569', textAlign: 'center', fontSize: '14px', fontWeight: '500' }}>
+            {esRegistro ? 'Registra tu negocio y personaliza tus facturas' : 'Inicia sesión para continuar'}
           </p>
 
-          <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {esRegistro && (
+              <>
+                <div>
+                  <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>Nombre del Local / Restaurante</label>
+                  <input
+                    type="text"
+                    placeholder="Ej: Hamburguesas El Valle"
+                    value={nombreLocalInput}
+                    onChange={(e) => setNombreLocalInput(e.target.value)}
+                    style={{ width: '100%', padding: '10px', border: '1.5px solid #64748b', borderRadius: '8px', color: '#0f172a', fontSize: '14px', boxSizing: 'border-box' }}
+                    required
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>NIT / Cédula del Negocio</label>
+                  <input
+                    type="text"
+                    placeholder="Ej: 901.234.567-1"
+                    value={documentoLocalInput}
+                    onChange={(e) => setDocumentoLocalInput(e.target.value)}
+                    style={{ width: '100%', padding: '10px', border: '1.5px solid #64748b', borderRadius: '8px', color: '#0f172a', fontSize: '14px', boxSizing: 'border-box' }}
+                    required
+                  />
+                </div>
+              </>
+            )}
+
             <div>
-              <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#475569', display: 'block', marginBottom: '4px' }}>Correo Electrónico</label>
+              <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>Correo Electrónico</label>
               <input
                 type="email"
                 placeholder="usuario@negocio.com"
                 value={emailInput}
                 onChange={(e) => setEmailInput(e.target.value)}
-                style={{ width: '100%', padding: '10px', border: '1.5px solid #94a3b8', borderRadius: '8px', boxSizing: 'border-box' }}
+                style={{ width: '100%', padding: '10px', border: '1.5px solid #64748b', borderRadius: '8px', color: '#0f172a', fontSize: '14px', boxSizing: 'border-box' }}
                 required
               />
             </div>
 
             <div>
-              <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#475569', display: 'block', marginBottom: '4px' }}>Contraseña</label>
+              <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>Contraseña</label>
               <input
                 type="password"
                 placeholder="••••••••"
                 value={passwordInput}
                 onChange={(e) => setPasswordInput(e.target.value)}
-                style={{ width: '100%', padding: '10px', border: '1.5px solid #94a3b8', borderRadius: '8px', boxSizing: 'border-box' }}
+                style={{ width: '100%', padding: '10px', border: '1.5px solid #64748b', borderRadius: '8px', color: '#0f172a', fontSize: '14px', boxSizing: 'border-box' }}
                 required
               />
             </div>
 
             <button
               type="submit"
-              style={{ background: '#2563eb', color: 'white', border: '2px solid #1d4ed8', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer', marginTop: '8px' }}
+              style={{ background: '#2563eb', color: 'white', border: '2px solid #1d4ed8', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer', marginTop: '6px' }}
             >
-              {esRegistro ? 'Registrar Cuenta' : 'Iniciar Sesión'}
+              {esRegistro ? 'Registrar Mi Negocio' : 'Iniciar Sesión'}
             </button>
           </form>
 
-          <div style={{ marginTop: '20px', textAlign: 'center', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
+          <div style={{ marginTop: '18px', textAlign: 'center', borderTop: '1px solid #e2e8f0', paddingTop: '14px' }}>
             <button
               type="button"
               onClick={() => setEsRegistro(!esRegistro)}
-              style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: '600', cursor: 'pointer', fontSize: '13px' }}
+              style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}
             >
               {esRegistro ? '¿Ya tienes cuenta? Inicia sesión' : '¿No tienes cuenta? Regístrate aquí'}
             </button>
@@ -457,12 +515,13 @@ export default function Home() {
     );
   }
 
-  // PANTALLA PRINCIPAL CON SESIÓN INICIADA
   return (
     <div className={styles.contenedorApp}>
-      {/* NAVEGACIÓN PRINCIPAL */}
+      {/* BARRA SUPERIOR */}
       <nav className={styles.barrasNavegacion}>
-        <div className={styles.brandTitle}>🍽️ RestoPOS Pro</div>
+        <div className={styles.brandTitle}>
+          🍽️ {perfil ? perfil.nombre_local : 'RestoPOS Pro'}
+        </div>
         <div className={styles.botonesModulo}>
           <button className={`${styles.btnModulo} ${modulo === 'ventas' ? styles.activeModulo : ''}`} onClick={() => setModulo('ventas')}>
             🏪 Ventas y Caja
@@ -498,7 +557,7 @@ export default function Home() {
 
                 {!cajaAbierta ? (
                   <div className={styles.aperturaBox}>
-                    <p style={{ fontSize: '13px', color: '#64748b' }}>Ingresa la base inicial para comenzar:</p>
+                    <p style={{ fontSize: '13px', color: '#64748b' }}>Ingresa la base inicial:</p>
                     <input
                       type="number"
                       placeholder="Base ($)"
@@ -523,10 +582,9 @@ export default function Home() {
 
               <div className={styles.seccionMesasGrid}>
                 <div className={styles.headerConBoton}>
-                  <h3>Mapa de Mesas</h3>
-                  <form onSubmit={agregarMesa} style={{ display: 'flex', gap: '8px' }}>
-                    <input type="text" placeholder="Mesa" className={styles.inputChico} value={nuevoNombreMesa} onChange={(e) => setNuevoNombreMesa(e.target.value)} required />
-                    <button type="submit" className={styles.btnAgregarConBorde}>＋ Agregar</button>
+                  <form onSubmit={agregarMesa} style={{ display: 'flex', gap: '8px', width: '100%' }}>
+                    <input type="text" placeholder="Nombre de mesa" className={styles.inputChico} value={nuevoNombreMesa} onChange={(e) => setNuevoNombreMesa(e.target.value)} required />
+                    <button type="submit" className={styles.btnAgregarConBorde}>＋ Agregar Mesa</button>
                   </form>
                 </div>
 
@@ -899,8 +957,8 @@ export default function Home() {
                       <td>{p.nombre}</td>
                       <td>${p.precio.toLocaleString()}</td>
                       <td>
-                        <button onClick={() => { setProductoEditando(p); setNuevoNombre(p.nombre); setNuevoPrecio(p.precio.toString()); }} className={styles.btnVerConBorde}>✏️</button>
-                        <button onClick={async () => { await supabase.from('productos').delete().eq('id', p.id); obtenerProductos(); }} className={styles.btnEliminarConBorde}>🗑️</button>
+                        <button onClick={() => { setProductoEditando(p); setNuevoNombre(p.nombre); setNuevoPrecio(p.precio.toString()); }} className={styles.btnVerConBorde}>✏️ Editar</button>
+                        <button onClick={async () => { await supabase.from('productos').delete().eq('id', p.id); if (usuario) obtenerProductos(usuario.id); }} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>🗑️ Eliminar</button>
                       </td>
                     </tr>
                   ))}
@@ -911,10 +969,15 @@ export default function Home() {
         </div>
       )}
 
-      {/* MODAL DETALLE DE VENTA */}
+      {/* MODAL IMPRESIÓN CON DATOS PERSONALIZADOS DEL LOCAL */}
       {(mostrarModalFactura || ventaSeleccionada) && (
         <div className={styles.overlayModal} onClick={() => { setMostrarModalFactura(false); setVentaSeleccionada(null); }}>
           <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <div style={{ textAlign: 'center', borderBottom: '2px dashed #cbd5e1', paddingBottom: '12px', marginBottom: '12px' }}>
+              <h2 style={{ margin: 0, color: '#0f172a' }}>{perfil ? perfil.nombre_local : 'Mi Negocio'}</h2>
+              <span style={{ fontSize: '13px', color: '#475569', fontWeight: 'bold' }}>NIT / CC: {perfil ? perfil.documento : 'N/A'}</span>
+            </div>
+
             <h3>📄 Detalle de Venta</h3>
             {ventaSeleccionada && (
               <div>
@@ -923,6 +986,7 @@ export default function Home() {
                 <p><strong>Total:</strong> ${ventaSeleccionada.total.toLocaleString()}</p>
               </div>
             )}
+
             <div className={styles.modalActions}>
               <button onClick={() => { window.print(); setMostrarModalFactura(false); setVentaSeleccionada(null); }} className={styles.btnCobrar}>🖨️ Imprimir Ticket</button>
               <button onClick={() => { setMostrarModalFactura(false); setVentaSeleccionada(null); }} className={styles.btnAgregarConBorde}>Cerrar</button>
