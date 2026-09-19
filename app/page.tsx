@@ -22,6 +22,8 @@ export default function Home() {
   const [passwordInput, setPasswordInput] = useState('');
   const [nombreLocalInput, setNombreLocalInput] = useState('');
   const [documentoLocalInput, setDocumentoLocalInput] = useState('');
+  const [telefonoLocalInput, setTelefonoLocalInput] = useState('');
+  const [direccionLocalInput, setDireccionLocalInput] = useState('');
   const [esRegistro, setEsRegistro] = useState(false);
   const [cargandoAuth, setCargandoAuth] = useState(true);
 
@@ -31,7 +33,7 @@ export default function Home() {
   const [subPestanaProduccion, setSubPestanaProduccion] = useState<'inventario' | 'recetas' | 'productos'>('inventario');
   const [subPestanaHistorial, setSubPestanaHistorial] = useState<'ventas' | 'cierres'>('ventas');
 
-  // Datos del Usuario
+  // Datos
   const [productos, setProductos] = useState<Producto[]>([]);
   const [insumos, setInsumos] = useState<Insumo[]>([]);
   const [recetas, setRecetas] = useState<RecetaItem[]>([]);
@@ -46,16 +48,21 @@ export default function Home() {
 
   // Mesas y Pedidos
   const [mesaSeleccionada, setMesaSeleccionada] = useState<Mesa | null>(null);
-  const [metodoPago, setMetodoPago] = useState<'Efectivo' | 'Tarjeta' | 'Transferencia'>('Efectivo');
   const [cliente, setCliente] = useState({ nombre: '', documento: '' });
   const [lineasMesa, setLineasMesa] = useState<LineaFactura[]>([]);
+
+  // Modal Cobro y Factura
+  const [mostrarModalCobro, setMostrarModalCobro] = useState(false);
+  const [metodoPago, setMetodoPago] = useState<'Efectivo' | 'Tarjeta' | 'Transferencia'>('Efectivo');
+  const [montoPagaCon, setMontoPagaCon] = useState<string>('');
+  const [ventaConfirmadaTicket, setVentaConfirmadaTicket] = useState<Venta | null>(null);
 
   // Cierre
   const [efectivoReal, setEfectivoReal] = useState('');
   const [tarjetaReal, setTarjetaReal] = useState('');
   const [transferenciaReal, setTransferenciaReal] = useState('');
 
-  // Formularios Producción
+  // Formularios
   const [prodRecetaSel, setProdRecetaSel] = useState('');
   const [lineasReceta, setLineasReceta] = useState<{ insumo_id: string; cantidad_requerida: string }[]>([{ insumo_id: '', cantidad_requerida: '' }]);
   const [recetaEditandoId, setRecetaEditandoId] = useState<string | null>(null);
@@ -71,7 +78,6 @@ export default function Home() {
   const [nuevoInsumoStock, setNuevoInsumoStock] = useState('');
   const [conteosFisicos, setConteosFisicos] = useState<{ [key: string]: string }>({});
 
-  const [mostrarModalFactura, setMostrarModalFactura] = useState(false);
   const [ventaSeleccionada, setVentaSeleccionada] = useState<Venta | null>(null);
   const [cierreFiltroSeleccionado, setCierreFiltroSeleccionado] = useState<string>('abierta');
 
@@ -103,7 +109,7 @@ export default function Home() {
 
     if (esRegistro) {
       if (!nombreLocalInput || !documentoLocalInput) {
-        return alert('Ingresa el nombre del local y el documento para personalizar la factura');
+        return alert('Ingresa el nombre del local y el documento');
       }
 
       const { data, error } = await supabase.auth.signUp({
@@ -114,12 +120,13 @@ export default function Home() {
       if (error) {
         alert('Error en registro: ' + error.message);
       } else if (data.user) {
-        // Guardar Perfil del negocio
         await supabase.from('perfiles').insert([
           {
             id: data.user.id,
             nombre_local: nombreLocalInput,
             documento: documentoLocalInput,
+            telefono: telefonoLocalInput || 'N/A',
+            direccion: direccionLocalInput || 'N/A',
           },
         ]);
 
@@ -186,7 +193,22 @@ export default function Home() {
 
   const obtenerMesas = async (uId: string) => {
     const { data } = await supabase.from('mesas').select('*').eq('user_id', uId).order('nombre', { ascending: true });
-    if (data) setMesas(data as Mesa[]);
+    
+    // Si no existen mesas para el usuario, creamos 5 mesas por defecto
+    if (data && data.length === 0) {
+      const mesasIniciales = [
+        { nombre: 'Mesa 1', user_id: uId },
+        { nombre: 'Mesa 2', user_id: uId },
+        { nombre: 'Mesa 3', user_id: uId },
+        { nombre: 'Mesa 4', user_id: uId },
+        { nombre: 'Mesa 5', user_id: uId },
+      ];
+      await supabase.from('mesas').insert(mesasIniciales);
+      const { data: dataCreadas } = await supabase.from('mesas').select('*').eq('user_id', uId).order('nombre', { ascending: true });
+      if (dataCreadas) setMesas(dataCreadas as Mesa[]);
+    } else if (data) {
+      setMesas(data as Mesa[]);
+    }
   };
 
   const obtenerCierres = async (uId: string) => {
@@ -242,14 +264,26 @@ export default function Home() {
     alert('Comanda guardada');
   };
 
-  const cobrarMesa = async () => {
+  // Pre-cobro: Abre el modal con preview de la factura
+  const abrirModalCobrar = () => {
+    if (!mesaSeleccionada) return;
+    const productosValidos = lineasMesa.filter((f) => f.productoId !== '');
+    if (productosValidos.length === 0) return alert('No hay productos seleccionados en la mesa');
+
+    setMontoPagaCon('');
+    setMetodoPago('Efectivo');
+    setMostrarModalCobro(true);
+  };
+
+  // Confirmar Venta Final
+  const finalizarYCobrarVenta = async () => {
     if (!mesaSeleccionada || !usuario) return;
-    const productosValidos = lineasMesa
+
+    const productosDetalle: ProductoVenta[] = lineasMesa
       .filter((f) => f.productoId !== '')
       .map((f) => {
         const prod = productos.find((p) => p.id === f.productoId);
         return {
-          productoId: f.productoId,
           nombre: prod ? prod.nombre : '',
           cantidad: f.cantidad,
           precioUnitario: prod ? prod.precio : 0,
@@ -257,38 +291,52 @@ export default function Home() {
         };
       });
 
-    if (productosValidos.length === 0) return alert('No hay productos en la mesa');
+    const totalCalculado = productosDetalle.reduce((acc, item) => acc + item.subtotal, 0);
 
-    for (const pVal of productosValidos) {
-      const ingredientes = recetas.filter((r) => r.producto_id === pVal.productoId);
+    // Validar efectivo
+    if (metodoPago === 'Efectivo') {
+      const pagaConNum = parseFloat(montoPagaCon) || 0;
+      if (pagaConNum < totalCalculado) {
+        return alert(`El monto ingresado ($${pagaConNum.toLocaleString()}) es menor al total a cobrar ($${totalCalculado.toLocaleString()})`);
+      }
+    }
+
+    // Descontar inventario
+    for (const f of lineasMesa.filter((item) => item.productoId !== '')) {
+      const ingredientes = recetas.filter((r) => r.producto_id === f.productoId);
       for (const ing of ingredientes) {
         const insumoObj = insumos.find((i) => i.id === ing.insumo_id);
         if (insumoObj) {
-          const consumoTotal = Number(ing.cantidad_requerida) * pVal.cantidad;
+          const consumoTotal = Number(ing.cantidad_requerida) * f.cantidad;
           const nuevoStock = Number(insumoObj.stock_actual) - consumoTotal;
           await supabase.from('insumos').update({ stock_actual: nuevoStock }).eq('id', insumoObj.id);
         }
       }
     }
 
-    const totalCobrar = productosValidos.reduce((acc, item) => acc + item.subtotal, 0);
-
     const nuevaVenta = {
       cliente: cliente.nombre || `Mesa: ${mesaSeleccionada.nombre}`,
       documento: cliente.documento || 'N/A',
       metodo_pago: metodoPago,
-      productos: productosValidos.map(({ productoId, ...resto }) => resto),
-      total: totalCobrar,
+      productos: productosDetalle,
+      total: totalCalculado,
       user_id: usuario.id,
     };
 
-    await supabase.from('ventas').insert([nuevaVenta]);
-    await supabase.from('mesas').update({ pedidos: [], estado: 'libre' }).eq('id', mesaSeleccionada.id);
+    const { data: ventaGuardada, error } = await supabase.from('ventas').insert([nuevaVenta]).select();
 
-    setLineasMesa([]);
-    setMesaSeleccionada(null);
-    await cargarTodo(usuario.id);
-    setMostrarModalFactura(true);
+    if (error) {
+      alert('Error al registrar la venta: ' + error.message);
+    } else if (ventaGuardada && ventaGuardada[0]) {
+      // Liberar Mesa
+      await supabase.from('mesas').update({ pedidos: [], estado: 'libre' }).eq('id', mesaSeleccionada.id);
+
+      setVentaConfirmadaTicket(ventaGuardada[0] as Venta);
+      setLineasMesa([]);
+      setMesaSeleccionada(null);
+      setMostrarModalCobro(false);
+      await cargarTodo(usuario.id);
+    }
   };
 
   const realizarCierreCaja = async () => {
@@ -419,6 +467,9 @@ export default function Home() {
     return acc + (p ? p.precio : 0) * f.cantidad;
   }, 0);
 
+  const pagaConValor = parseFloat(montoPagaCon) || 0;
+  const cambioEfectivo = pagaConValor - totalCalculadoMesa;
+
   const ventasFiltradasHistorial = cierreFiltroSeleccionado === 'abierta'
     ? ventas.filter((v) => !v.cierre_id)
     : ventas.filter((v) => v.cierre_id === cierreFiltroSeleccionado);
@@ -431,11 +482,11 @@ export default function Home() {
     );
   }
 
-  // PANTALLA LOGIN / REGISTRO
+  // LOGIN / REGISTRO
   if (!usuario) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: '#0f172a', fontFamily: 'sans-serif' }}>
-        <div style={{ background: 'white', padding: '32px', borderRadius: '16px', border: '2px solid #cbd5e1', maxWidth: '420px', width: '90%', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)' }}>
+        <div style={{ background: 'white', padding: '32px', borderRadius: '16px', border: '2px solid #cbd5e1', maxWidth: '440px', width: '90%', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)' }}>
           <h2 style={{ margin: '0 0 6px', color: '#0f172a', textAlign: 'center' }}>🍽️ RestoPOS Pro</h2>
           <p style={{ margin: '0 0 20px', color: '#475569', textAlign: 'center', fontSize: '14px', fontWeight: '500' }}>
             {esRegistro ? 'Registra tu negocio y personaliza tus facturas' : 'Inicia sesión para continuar'}
@@ -464,6 +515,26 @@ export default function Home() {
                     onChange={(e) => setDocumentoLocalInput(e.target.value)}
                     style={{ width: '100%', padding: '10px', border: '1.5px solid #64748b', borderRadius: '8px', color: '#0f172a', fontSize: '14px', boxSizing: 'border-box' }}
                     required
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>Teléfono de Contacto</label>
+                  <input
+                    type="text"
+                    placeholder="Ej: 300 123 4567"
+                    value={telefonoLocalInput}
+                    onChange={(e) => setTelefonoLocalInput(e.target.value)}
+                    style={{ width: '100%', padding: '10px', border: '1.5px solid #64748b', borderRadius: '8px', color: '#0f172a', fontSize: '14px', boxSizing: 'border-box' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>Dirección</label>
+                  <input
+                    type="text"
+                    placeholder="Ej: Calle 45 # 12 - 34"
+                    value={direccionLocalInput}
+                    onChange={(e) => setDireccionLocalInput(e.target.value)}
+                    style={{ width: '100%', padding: '10px', border: '1.5px solid #64748b', borderRadius: '8px', color: '#0f172a', fontSize: '14px', boxSizing: 'border-box' }}
                   />
                 </div>
               </>
@@ -613,12 +684,6 @@ export default function Home() {
                       <input type="text" placeholder="Cédula/NIT" className={styles.inputChico} value={cliente.documento} onChange={(e) => setCliente({ ...cliente, documento: e.target.value })} />
                     </div>
 
-                    <div className={styles.selectorMetodo}>
-                      {(['Efectivo', 'Tarjeta', 'Transferencia'] as const).map((m) => (
-                        <button key={m} className={metodoPago === m ? styles.metodoSel : ''} onClick={() => setMetodoPago(m)}>{m}</button>
-                      ))}
-                    </div>
-
                     <div className={styles.listaProductosPedido}>
                       {lineasMesa.map((f, index) => (
                         <div key={f.id} className={styles.filaPedido}>
@@ -651,7 +716,7 @@ export default function Home() {
 
                     <div className={styles.accionesMesa}>
                       <button className={styles.btnGuardarPedido} onClick={guardarPedidoMesa}>💾 Guardar Comanda</button>
-                      <button className={styles.btnCobrar} onClick={cobrarMesa}>⚡ COBRAR Y FACTURAR</button>
+                      <button className={styles.btnCobrar} onClick={abrirModalCobrar}>⚡ IR A COBRAR Y FACTURAR</button>
                     </div>
                   </>
                 ) : null}
@@ -969,27 +1034,157 @@ export default function Home() {
         </div>
       )}
 
-      {/* MODAL IMPRESIÓN CON DATOS PERSONALIZADOS DEL LOCAL */}
-      {(mostrarModalFactura || ventaSeleccionada) && (
-        <div className={styles.overlayModal} onClick={() => { setMostrarModalFactura(false); setVentaSeleccionada(null); }}>
-          <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
-            <div style={{ textAlign: 'center', borderBottom: '2px dashed #cbd5e1', paddingBottom: '12px', marginBottom: '12px' }}>
-              <h2 style={{ margin: 0, color: '#0f172a' }}>{perfil ? perfil.nombre_local : 'Mi Negocio'}</h2>
-              <span style={{ fontSize: '13px', color: '#475569', fontWeight: 'bold' }}>NIT / CC: {perfil ? perfil.documento : 'N/A'}</span>
+      {/* MODAL DE PROCESO DE COBRO (PREVIEW + MÉTODOS Y CAMBIO) */}
+      {mostrarModalCobro && mesaSeleccionada && (
+        <div className={styles.overlayModal} onClick={() => setMostrarModalCobro(false)}>
+          <div className={styles.modalCobroGrandote} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.columnaPreviewFactura}>
+              <div style={{ textAlign: 'center', borderBottom: '2px dashed #cbd5e1', paddingBottom: '8px', marginBottom: '8px' }}>
+                <h3 style={{ margin: 0 }}>{perfil?.nombre_local || 'Mi Negocio'}</h3>
+                <p style={{ margin: 0, fontSize: '12px', color: '#475569' }}>NIT/CC: {perfil?.documento || 'N/A'}</p>
+                <p style={{ margin: 0, fontSize: '12px', color: '#475569' }}>Tel: {perfil?.telefono} | {perfil?.direccion}</p>
+              </div>
+
+              <p style={{ fontSize: '13px', margin: '4px 0' }}><strong>Mesa:</strong> {mesaSeleccionada.nombre}</p>
+              <p style={{ fontSize: '13px', margin: '4px 0' }}><strong>Cliente:</strong> {cliente.nombre || 'Consumidor Final'}</p>
+
+              <table className={styles.tablaTicketPreview}>
+                <thead>
+                  <tr><th>Cant.</th><th>Producto</th><th>P.Unit</th><th>Subtotal</th></tr>
+                </thead>
+                <tbody>
+                  {lineasMesa
+                    .filter((f) => f.productoId !== '')
+                    .map((f) => {
+                      const prod = productos.find((p) => p.id === f.productoId);
+                      return (
+                        <tr key={f.id}>
+                          <td>{f.cantidad}</td>
+                          <td>{prod?.nombre}</td>
+                          <td>${prod?.precio.toLocaleString()}</td>
+                          <td>${((prod?.precio || 0) * f.cantidad).toLocaleString()}</td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+
+              <div style={{ display: 'flex', justifyBetween: 'space-between', fontSize: '18px', fontWeight: 'bold', borderTop: '2px dashed #0f172a', paddingTop: '8px', marginTop: '12px' }}>
+                <span>TOTAL A PAGAR:</span>
+                <strong style={{ color: '#16a34a' }}>${totalCalculadoMesa.toLocaleString()}</strong>
+              </div>
             </div>
 
-            <h3>📄 Detalle de Venta</h3>
-            {ventaSeleccionada && (
-              <div>
-                <p><strong>Cliente:</strong> {ventaSeleccionada.cliente}</p>
-                <p><strong>Método de Pago:</strong> {ventaSeleccionada.metodo_pago}</p>
-                <p><strong>Total:</strong> ${ventaSeleccionada.total.toLocaleString()}</p>
+            <div className={styles.columnaOpcionesCobro}>
+              <h3>💳 Opciones de Pago</h3>
+
+              <div style={{ margin: '12px 0' }}>
+                <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Método de Pago:</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {(['Efectivo', 'Tarjeta', 'Transferencia'] as const).map((m) => (
+                    <button
+                      key={m}
+                      className={metodoPago === m ? styles.metodoSel : ''}
+                      onClick={() => setMetodoPago(m)}
+                      style={{ flex: 1, padding: '10px', border: '1.5px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+                    >
+                      {m === 'Efectivo' && '💵 '}
+                      {m === 'Tarjeta' && '💳 '}
+                      {m === 'Transferencia' && '📲 '}
+                      {m}
+                    </button>
+                  ))}
+                </div>
               </div>
-            )}
+
+              {metodoPago === 'Efectivo' && (
+                <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1.5px solid #cbd5e1', margin: '12px 0' }}>
+                  <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>Monto Pagado por el Cliente ($):</label>
+                  <input
+                    type="number"
+                    placeholder="Ej: 50000"
+                    value={montoPagaCon}
+                    onChange={(e) => setMontoPagaCon(e.target.value)}
+                    className={styles.inputChico}
+                    style={{ fontSize: '18px', fontWeight: 'bold' }}
+                  />
+
+                  {montoPagaCon !== '' && (
+                    <div style={{ marginTop: '10px' }}>
+                      {cambioEfectivo >= 0 ? (
+                        <div style={{ color: '#15803d', fontWeight: 'bold', fontSize: '16px', background: '#dcfce7', padding: '8px', borderRadius: '6px' }}>
+                          💵 Cambio a entregar: ${cambioEfectivo.toLocaleString()}
+                        </div>
+                      ) : (
+                        <div style={{ color: '#b91c1c', fontWeight: 'bold', fontSize: '14px', background: '#fef2f2', padding: '8px', borderRadius: '6px' }}>
+                          ⚠️ Falta dinero: ${Math.abs(cambioEfectivo).toLocaleString()}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <button onClick={finalizarYCobrarVenta} className={styles.btnCobrar} style={{ width: '100%', fontSize: '16px' }}>
+                  ✅ FINALIZAR Y REGISTRAR VENTA
+                </button>
+                <button onClick={() => setMostrarModalCobro(false)} className={styles.btnEliminarConBorde} style={{ width: '100%' }}>
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL TICKET CONFIRMADO E IMPRESIÓN */}
+      {(ventaConfirmadaTicket || ventaSeleccionada) && (
+        <div className={styles.overlayModal} onClick={() => { setVentaConfirmadaTicket(null); setVentaSeleccionada(null); }}>
+          <div className={styles.modalContentTicket} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.ticketImpresionArea}>
+              <div style={{ textAlign: 'center', borderBottom: '2px dashed #0f172a', paddingBottom: '8px', marginBottom: '8px' }}>
+                <h2 style={{ margin: 0 }}>{perfil?.nombre_local || 'Mi Negocio'}</h2>
+                <p style={{ margin: '2px 0', fontSize: '12px' }}>NIT / CC: {perfil?.documento || 'N/A'}</p>
+                <p style={{ margin: '2px 0', fontSize: '12px' }}>Tel: {perfil?.telefono} | {perfil?.direccion}</p>
+                <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#64748b' }}>{formatearFecha((ventaConfirmadaTicket || ventaSeleccionada)!.created_at)}</p>
+              </div>
+
+              <div style={{ fontSize: '12px', marginBottom: '8px' }}>
+                <p style={{ margin: '2px 0' }}><strong>Ticket #:</strong> {(ventaConfirmadaTicket || ventaSeleccionada)!.id}</p>
+                <p style={{ margin: '2px 0' }}><strong>Cliente:</strong> {(ventaConfirmadaTicket || ventaSeleccionada)!.cliente}</p>
+                <p style={{ margin: '2px 0' }}><strong>Método de Pago:</strong> {(ventaConfirmadaTicket || ventaSeleccionada)!.metodo_pago}</p>
+              </div>
+
+              <table className={styles.tablaTicketPreview}>
+                <thead>
+                  <tr><th>Cant.</th><th>Producto</th><th>P.Unit</th><th>Subtotal</th></tr>
+                </thead>
+                <tbody>
+                  {(ventaConfirmadaTicket || ventaSeleccionada)!.productos.map((item, idx) => (
+                    <tr key={idx}>
+                      <td>{item.cantidad}</td>
+                      <td>{item.nombre}</td>
+                      <td>${item.precioUnitario?.toLocaleString()}</td>
+                      <td>${item.subtotal?.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '16px', fontWeight: 'bold', borderTop: '2px dashed #0f172a', paddingTop: '8px', marginTop: '10px' }}>
+                <span>TOTAL:</span>
+                <span>${(ventaConfirmadaTicket || ventaSeleccionada)!.total.toLocaleString()}</span>
+              </div>
+            </div>
 
             <div className={styles.modalActions}>
-              <button onClick={() => { window.print(); setMostrarModalFactura(false); setVentaSeleccionada(null); }} className={styles.btnCobrar}>🖨️ Imprimir Ticket</button>
-              <button onClick={() => { setMostrarModalFactura(false); setVentaSeleccionada(null); }} className={styles.btnAgregarConBorde}>Cerrar</button>
+              <button onClick={() => { window.print(); setVentaConfirmadaTicket(null); setVentaSeleccionada(null); }} className={styles.btnCobrar} style={{ flex: 1 }}>
+                🖨️ Imprimir Ticket
+              </button>
+              <button onClick={() => { setVentaConfirmadaTicket(null); setVentaSeleccionada(null); }} className={styles.btnAgregarConBorde}>
+                Cerrar
+              </button>
             </div>
           </div>
         </div>

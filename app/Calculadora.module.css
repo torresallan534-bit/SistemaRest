@@ -619,3 +619,78 @@
   gap: 10px;
   margin-top: 16px;
 }
+
+/* MODAL COBRO CON PREVIEW Y CAMBIO */
+.modalCobroGrandote {
+  background: white;
+  padding: 24px;
+  border-radius: 12px;
+  max-width: 800px;
+  width: 95%;
+  border: 2px solid #94a3b8;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.25);
+}
+
+@media (max-width: 700px) {
+  .modalCobroGrandote {
+    grid-template-columns: 1fr;
+  }
+}
+
+.columnaPreviewFactura {
+  background: #f8fafc;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.columnaOpcionesCobro {
+  display: flex;
+  flex-direction: column;
+}
+
+.tablaTicketPreview {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+.tablaTicketPreview th, .tablaTicketPreview td {
+  padding: 6px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+}
+
+.modalContentTicket {
+  background: white;
+  padding: 24px;
+  border-radius: 12px;
+  max-width: 380px;
+  width: 90%;
+  border: 2px solid #0f172a;
+}
+
+/* FORMATO DE IMPRESIÓN LIMPIO */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .modalContentTicket, .modalContentTicket * {
+    visibility: visible;
+  }
+  .modalContentTicket {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    border: none;
+    box-shadow: none;
+  }
+  .modalActions {
+    display: none !important;
+  }
+}
