@@ -285,7 +285,7 @@
 .formClienteGrid, .grid3Campos, .grid2Campos {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 10px;
   margin-bottom: 12px;
 }
 
@@ -299,19 +299,21 @@
   }
 }
 
-/* INPUTS Y SELECTS CON BORDES CLAROS */
-.inputChico, .selectChico, .cantInput {
-  padding: 9px 12px;
+/* INPUTS, SELECTS Y CAJAS DE TEXTO GENERALES CON BORDES DEFINIDOS */
+.inputChico, .selectChico, .cantInput,
+.formStandard input, .formStandard select {
+  padding: 10px 12px;
   border: 1.5px solid #94a3b8;
   border-radius: 8px;
   background-color: #ffffff;
   color: #0f172a;
   font-size: 14px;
   width: 100%;
-  box-sizing: border-border;
+  box-sizing: border-box;
 }
 
-.inputChico:focus, .selectChico:focus, .cantInput:focus {
+.inputChico:focus, .selectChico:focus, .cantInput:focus,
+.formStandard input:focus, .formStandard select:focus {
   border-color: #2563eb;
   outline: none;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
@@ -397,20 +399,23 @@
   cursor: pointer;
 }
 
-/* BOTONES CON BORDES RESALTADOS */
-.btnAgregarConBorde {
+/* BOTONES CON BORDES RESALTADOS (FORMULARIOS Y ACCIONES) */
+.btnAgregarConBorde, .formStandard button[type="submit"] {
   background: #2563eb;
   color: white;
   border: 2px solid #1d4ed8;
-  padding: 9px 16px;
+  padding: 10px 18px;
   border-radius: 8px;
   font-weight: bold;
   cursor: pointer;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s;
+  margin-top: 6px;
 }
 
-.btnAgregarConBorde:hover {
+.btnAgregarConBorde:hover, .formStandard button[type="submit"]:hover {
   background: #1d4ed8;
+  border-color: #1e40af;
 }
 
 .btnAgregarLineaConBorde {
@@ -552,7 +557,7 @@
   cursor: not-allowed;
 }
 
-/* TABLAS GENERALES */
+/* TABLAS GENERALES CON BORDES */
 .tablaApp {
   width: 100%;
   border-collapse: collapse;
@@ -578,7 +583,7 @@
   text-align: left;
 }
 
-/* FORMULARIOS ESTÁNDAR */
+/* FORMULARIOS ESTÁNDAR (INVENTARIOS / PRODUCTOS) */
 .formStandard {
   background: white;
   border: 2px solid #cbd5e1;
