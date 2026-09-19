@@ -19,7 +19,16 @@ interface RecetaItem { id: string; producto_id: string; insumo_id: string; canti
 interface LineaFactura { id: number; productoId: string; cantidad: number; }
 interface ProductoVenta { nombre: string; cantidad: number; precioUnitario: number; subtotal: number; }
 interface Venta { id: number; created_at: string; cliente: string; documento: string; metodo_pago: string; total: number; productos: ProductoVenta[]; cierre_id?: string; user_id?: string; }
-interface Mesa { id: string; nombre: string; estado: 'libre' | 'ocupada'; pedidos: LineaFactura[]; user_id?: string; }
+interface Mesa { 
+  id: string; 
+  nombre: string; 
+  estado: 'libre' | 'ocupada'; 
+  pedidos: LineaFactura[]; 
+  cliente_nombre?: string;
+  cliente_documento?: string;
+  comentarios?: string;
+  user_id?: string; 
+}
 interface CierreCaja { id: string; fecha: string; base_inicial: number; total_sistema: number; efectivo_sistema: number; tarjeta_sistema: number; transferencia_sistema: number; efectivo_real: number; tarjeta_real: number; transferencia_real: number; diferencia_efectivo: number; diferencia_tarjeta: number; diferencia_transferencia: number; user_id?: string; }
 
 export default function Home() {
@@ -27,7 +36,7 @@ export default function Home() {
   const [usuario, setUsuario] = useState<any>(null);
   const [perfil, setPerfil] = useState<Perfil | null>(null);
   
-  // Campos del Formulario de Registro
+  // Campos del Registro
   const [nombrePersonaInput, setNombrePersonaInput] = useState('');
   const [nombreLocalInput, setNombreLocalInput] = useState('');
   const [documentoLocalInput, setDocumentoLocalInput] = useState('');
@@ -58,10 +67,23 @@ export default function Home() {
   const [baseEfectivoInput, setBaseEfectivoInput] = useState<string>('');
   const [baseEfectivoJornada, setBaseEfectivoJornada] = useState<number>(0);
 
-  // Mesas y Pedidos
+  // Mesa activa y Comanda
   const [mesaSeleccionada, setMesaSeleccionada] = useState<Mesa | null>(null);
-  const [cliente, setCliente] = useState({ nombre: '', documento: '' });
   const [lineasMesa, setLineasMesa] = useState<LineaFactura[]>([]);
+  const [clienteNombreMesa, setClienteNombreMesa] = useState('');
+  const [clienteDocMesa, setClienteDocMesa] = useState('');
+  const [comentarioMesa, setComentarioMesa] = useState('');
+
+  // Ticket de Comanda Cocina
+  const [numComanda, setNumComanda] = useState<number>(1);
+  const [comandaImprimir, setComandaImprimir] = useState<{
+    numero: number;
+    mesa: string;
+    hora: string;
+    cliente: string;
+    comentario: string;
+    items: { nombre: string; cantidad: number }[];
+  } | null>(null);
 
   // Modal Cobro y Factura
   const [mostrarModalCobro, setMostrarModalCobro] = useState(false);
@@ -74,7 +96,7 @@ export default function Home() {
   const [tarjetaReal, setTarjetaReal] = useState('');
   const [transferenciaReal, setTransferenciaReal] = useState('');
 
-  // Formularios
+  // Formularios Producción
   const [prodRecetaSel, setProdRecetaSel] = useState('');
   const [lineasReceta, setLineasReceta] = useState<{ insumo_id: string; cantidad_requerida: string }[]>([{ insumo_id: '', cantidad_requerida: '' }]);
   const [recetaEditandoId, setRecetaEditandoId] = useState<string | null>(null);
@@ -111,8 +133,21 @@ export default function Home() {
   };
 
   const cargarPerfil = async (userId: string) => {
-    const { data } = await supabase.from('perfiles').select('*').eq('id', userId).single();
-    if (data) setPerfil(data as Perfil);
+    const { data } = await supabase.from('perfiles').select('*').eq('id', userId).maybeSingle();
+    if (data) {
+      setPerfil(data as Perfil);
+    } else {
+      const perfilNuevo: Perfil = {
+        id: userId,
+        nombre_persona: 'Propietario',
+        nombre_local: 'Mi Negocio',
+        documento: 'N/A',
+        telefono: 'N/A',
+        direccion: 'N/A',
+      };
+      await supabase.from('perfiles').upsert(perfilNuevo);
+      setPerfil(perfilNuevo);
+    }
   };
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -121,7 +156,7 @@ export default function Home() {
 
     if (esRegistro) {
       if (!nombrePersonaInput || !nombreLocalInput || !documentoLocalInput || !direccionLocalInput || !telefonoLocalInput) {
-        return alert('Por favor completa todos los campos del registro para personalizar tu factura');
+        return alert('Por favor completa todos los campos del registro');
       }
 
       const { data, error } = await supabase.auth.signUp({
@@ -132,20 +167,17 @@ export default function Home() {
       if (error) {
         alert('Error en registro: ' + error.message);
       } else if (data.user) {
-        await supabase.from('perfiles').insert([
-          {
-            id: data.user.id,
-            nombre_persona: nombrePersonaInput,
-            nombre_local: nombreLocalInput,
-            documento: documentoLocalInput,
-            direccion: direccionLocalInput,
-            telefono: telefonoLocalInput,
-          },
-        ]);
-
-        alert('¡Registro exitoso!');
+        const perfilObj = {
+          id: data.user.id,
+          nombre_persona: nombrePersonaInput,
+          nombre_local: nombreLocalInput,
+          documento: documentoLocalInput,
+          direccion: direccionLocalInput,
+          telefono: telefonoLocalInput,
+        };
+        await supabase.from('perfiles').upsert([perfilObj]);
+        setPerfil(perfilObj);
         setUsuario(data.user);
-        await cargarPerfil(data.user.id);
         await cargarTodo(data.user.id);
       }
     } else {
@@ -251,6 +283,9 @@ export default function Home() {
     if (!cajaAbierta) return alert('⚠️ Debes realizar la apertura de caja primero.');
     setMesaSeleccionada(m);
     setLineasMesa(m.pedidos || []);
+    setClienteNombreMesa(m.cliente_nombre || '');
+    setClienteDocMesa(m.cliente_documento || '');
+    setComentarioMesa(m.comentarios || '');
   };
 
   const agregarMesa = async (e: React.FormEvent) => {
@@ -268,12 +303,43 @@ export default function Home() {
     if (usuario) obtenerMesas(usuario.id);
   };
 
+  // Guardar Comanda y Generar Ticket para Cocina
   const guardarPedidoMesa = async () => {
     if (!mesaSeleccionada || !usuario) return;
-    const estado = lineasMesa.length > 0 ? 'ocupada' : 'libre';
-    await supabase.from('mesas').update({ pedidos: lineasMesa, estado }).eq('id', mesaSeleccionada.id);
+
+    const productosValidos = lineasMesa.filter((f) => f.productoId !== '');
+    if (productosValidos.length === 0) return alert('Selecciona al menos un producto');
+
+    const estado = 'ocupada';
+    await supabase.from('mesas').update({ 
+      pedidos: lineasMesa, 
+      estado,
+      cliente_nombre: clienteNombreMesa,
+      cliente_documento: clienteDocMesa,
+      comentarios: comentarioMesa
+    }).eq('id', mesaSeleccionada.id);
+
+    // Armar items para cocina
+    const itemsCocina = productosValidos.map((item) => {
+      const prod = productos.find((p) => p.id === item.productoId);
+      return {
+        nombre: prod ? prod.nombre : 'Producto',
+        cantidad: item.cantidad
+      };
+    });
+
+    const ticketCocina = {
+      numero: numComanda,
+      mesa: mesaSeleccionada.nombre,
+      hora: new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      cliente: clienteNombreMesa || 'Cliente General',
+      comentario: comentarioMesa,
+      items: itemsCocina
+    };
+
+    setNumComanda((prev) => prev + 1);
+    setComandaImprimir(ticketCocina);
     obtenerMesas(usuario.id);
-    alert('Comanda guardada');
   };
 
   const abrirModalCobrar = () => {
@@ -323,8 +389,8 @@ export default function Home() {
     }
 
     const nuevaVenta = {
-      cliente: cliente.nombre || `Mesa: ${mesaSeleccionada.nombre}`,
-      documento: cliente.documento || 'N/A',
+      cliente: clienteNombreMesa || `Mesa: ${mesaSeleccionada.nombre}`,
+      documento: clienteDocMesa || 'N/A',
       metodo_pago: metodoPago,
       productos: productosDetalle,
       total: totalCalculado,
@@ -336,10 +402,20 @@ export default function Home() {
     if (error) {
       alert('Error al registrar la venta: ' + error.message);
     } else if (ventaGuardada && ventaGuardada[0]) {
-      await supabase.from('mesas').update({ pedidos: [], estado: 'libre' }).eq('id', mesaSeleccionada.id);
+      // Liberar mesa por completo
+      await supabase.from('mesas').update({ 
+        pedidos: [], 
+        estado: 'libre',
+        cliente_nombre: '',
+        cliente_documento: '',
+        comentarios: ''
+      }).eq('id', mesaSeleccionada.id);
 
       setVentaConfirmadaTicket(ventaGuardada[0] as Venta);
       setLineasMesa([]);
+      setClienteNombreMesa('');
+      setClienteDocMesa('');
+      setComentarioMesa('');
       setMesaSeleccionada(null);
       setMostrarModalCobro(false);
       await cargarTodo(usuario.id);
@@ -380,7 +456,7 @@ export default function Home() {
         await supabase.from('ventas').update({ cierre_id: nuevoCierreId }).in('id', idsVentasAbiertas);
       }
 
-      alert('🔒 Cierre completado. La jornada ha sido finalizada.');
+      alert('🔒 Cierre completado.');
       setCajaAbierta(false);
       setBaseEfectivoJornada(0);
       setBaseEfectivoInput('');
@@ -496,7 +572,7 @@ export default function Home() {
         <div style={{ background: 'white', padding: '32px', borderRadius: '16px', border: '2px solid #cbd5e1', maxWidth: '460px', width: '90%', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)' }}>
           <h2 style={{ margin: '0 0 6px', color: '#0f172a', textAlign: 'center' }}>🍽️ RestoPOS Pro</h2>
           <p style={{ margin: '0 0 20px', color: '#475569', textAlign: 'center', fontSize: '14px', fontWeight: '500' }}>
-            {esRegistro ? 'Completa los datos de tu negocio para la facturación' : 'Inicia sesión para continuar'}
+            {esRegistro ? 'Completa los datos para la facturación' : 'Inicia sesión para continuar'}
           </p>
 
           <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -611,7 +687,7 @@ export default function Home() {
       {/* BARRA SUPERIOR */}
       <nav className={styles.barrasNavegacion}>
         <div className={styles.brandTitle}>
-          🍽️ {perfil ? perfil.nombre_local : 'RestoPOS Pro'}
+          🍽️ {perfil?.nombre_local ? perfil.nombre_local : 'RestoPOS Pro'}
         </div>
         <div className={styles.botonesModulo}>
           <button className={`${styles.btnModulo} ${modulo === 'ventas' ? styles.activeModulo : ''}`} onClick={() => setModulo('ventas')}>
@@ -700,8 +776,8 @@ export default function Home() {
                   <>
                     <h3>Atendiendo: {mesaSeleccionada.nombre}</h3>
                     <div className={styles.formClienteGrid}>
-                      <input type="text" placeholder="Cliente" className={styles.inputChico} value={cliente.nombre} onChange={(e) => setCliente({ ...cliente, nombre: e.target.value })} />
-                      <input type="text" placeholder="Cédula/NIT" className={styles.inputChico} value={cliente.documento} onChange={(e) => setCliente({ ...cliente, documento: e.target.value })} />
+                      <input type="text" placeholder="Cliente" className={styles.inputChico} value={clienteNombreMesa} onChange={(e) => setClienteNombreMesa(e.target.value)} />
+                      <input type="text" placeholder="Cédula/NIT" className={styles.inputChico} value={clienteDocMesa} onChange={(e) => setClienteDocMesa(e.target.value)} />
                     </div>
 
                     <div className={styles.listaProductosPedido}>
@@ -728,6 +804,20 @@ export default function Home() {
                     <button className={styles.btnAgregarLineaConBorde} onClick={() => setLineasMesa([...lineasMesa, { id: Date.now(), productoId: '', cantidad: 1 }])}>
                       ＋ Agregar Producto
                     </button>
+
+                    {/* Observaciones / Comentarios del Pedido */}
+                    <div style={{ marginTop: '12px' }}>
+                      <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>
+                        📝 Observaciones para Cocina:
+                      </label>
+                      <textarea
+                        rows={2}
+                        placeholder="Ej: Sin cebolla, carne término medio, salsa aparte..."
+                        value={comentarioMesa}
+                        onChange={(e) => setComentarioMesa(e.target.value)}
+                        style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box' }}
+                      />
+                    </div>
 
                     <div className={styles.footerTotalMesa}>
                       <span>Total Mesa:</span>
@@ -795,26 +885,28 @@ export default function Home() {
 
               <div style={{ marginTop: '28px' }}>
                 <h3>Ventas de la Jornada Activa ({ventasJornadaActual.length})</h3>
-                <table className={styles.tablaApp}>
-                  <thead>
-                    <tr><th>Hora</th><th>Cliente</th><th>Método</th><th>Total</th><th>Acción</th></tr>
-                  </thead>
-                  <tbody>
-                    {ventasJornadaActual.length === 0 ? (
-                      <tr><td colSpan={5} style={{ textAlign: 'center', color: '#94a3b8' }}>No hay ventas registradas en la jornada en curso.</td></tr>
-                    ) : (
-                      ventasJornadaActual.map((v) => (
-                        <tr key={v.id}>
-                          <td>{formatearFecha(v.created_at)}</td>
-                          <td>{v.cliente}</td>
-                          <td>{v.metodo_pago}</td>
-                          <td><strong>${v.total.toLocaleString()}</strong></td>
-                          <td><button onClick={() => setVentaSeleccionada(v)} className={styles.btnVerConBorde}>👁️ Detalle</button></td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                <div className={styles.tablaResponsiveContainer}>
+                  <table className={styles.tablaApp}>
+                    <thead>
+                      <tr><th>Hora</th><th>Cliente</th><th>Método</th><th>Total</th><th>Acción</th></tr>
+                    </thead>
+                    <tbody>
+                      {ventasJornadaActual.length === 0 ? (
+                        <tr><td colSpan={5} style={{ textAlign: 'center', color: '#94a3b8' }}>No hay ventas registradas en la jornada en curso.</td></tr>
+                      ) : (
+                        ventasJornadaActual.map((v) => (
+                          <tr key={v.id}>
+                            <td>{formatearFecha(v.created_at)}</td>
+                            <td>{v.cliente}</td>
+                            <td>{v.metodo_pago}</td>
+                            <td><strong>${v.total.toLocaleString()}</strong></td>
+                            <td><button onClick={() => setVentaSeleccionada(v)} className={styles.btnVerConBorde}>👁️ Detalle</button></td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
@@ -829,9 +921,9 @@ export default function Home() {
 
               {subPestanaHistorial === 'ventas' ? (
                 <div>
-                  <div style={{ margin: '16px 0', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ margin: '16px 0', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                     <label style={{ fontWeight: 'bold' }}>Filtrar por Cierre / Jornada:</label>
-                    <select className={styles.selectChico} style={{ maxWidth: '350px' }} value={cierreFiltroSeleccionado} onChange={(e) => setCierreFiltroSeleccionado(e.target.value)}>
+                    <select className={styles.selectChico} style={{ maxWidth: '350px', width: '100%' }} value={cierreFiltroSeleccionado} onChange={(e) => setCierreFiltroSeleccionado(e.target.value)}>
                       <option value="abierta">🟢 Jornada Activa (En servicio)</option>
                       {cierres.map((c) => (
                         <option key={c.id} value={c.id}>
@@ -841,48 +933,52 @@ export default function Home() {
                     </select>
                   </div>
 
+                  <div className={styles.tablaResponsiveContainer}>
+                    <table className={styles.tablaApp}>
+                      <thead>
+                        <tr><th>Hora/Fecha</th><th>Cliente</th><th>Método</th><th>Total</th><th>Acciones</th></tr>
+                      </thead>
+                      <tbody>
+                        {ventasFiltradasHistorial.map((v) => (
+                          <tr key={v.id}>
+                            <td>{formatearFecha(v.created_at)}</td>
+                            <td>{v.cliente}</td>
+                            <td>{v.metodo_pago}</td>
+                            <td><strong>${v.total.toLocaleString()}</strong></td>
+                            <td>
+                              <button onClick={() => setVentaSeleccionada(v)} className={styles.btnVerConBorde}>👁️ Detalle</button>
+                              <button onClick={() => eliminarVenta(v.id)} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>🗑️ Eliminar</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div className={styles.tablaResponsiveContainer}>
                   <table className={styles.tablaApp}>
                     <thead>
-                      <tr><th>Hora/Fecha</th><th>Cliente</th><th>Método</th><th>Total</th><th>Acciones</th></tr>
+                      <tr><th>Fecha Cierre</th><th>Base</th><th>Total Sistema</th><th>Efectivo Real</th><th>Diferencia</th><th>Acciones</th></tr>
                     </thead>
                     <tbody>
-                      {ventasFiltradasHistorial.map((v) => (
-                        <tr key={v.id}>
-                          <td>{formatearFecha(v.created_at)}</td>
-                          <td>{v.cliente}</td>
-                          <td>{v.metodo_pago}</td>
-                          <td><strong>${v.total.toLocaleString()}</strong></td>
+                      {cierres.map((c) => (
+                        <tr key={c.id}>
+                          <td>{formatearFecha(c.fecha)}</td>
+                          <td>${c.base_inicial?.toLocaleString() || 0}</td>
+                          <td>${c.total_sistema.toLocaleString()}</td>
+                          <td>${c.efectivo_real.toLocaleString()}</td>
+                          <td style={{ color: c.diferencia_efectivo < 0 ? '#dc2626' : '#16a34a', fontWeight: 'bold' }}>
+                            ${(c.diferencia_efectivo + c.diferencia_tarjeta + c.diferencia_transferencia).toLocaleString()}
+                          </td>
                           <td>
-                            <button onClick={() => setVentaSeleccionada(v)} className={styles.btnVerConBorde}>👁️ Detalle</button>
-                            <button onClick={() => eliminarVenta(v.id)} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>🗑️ Eliminar</button>
+                            <button onClick={() => eliminarCierre(c.id)} className={styles.btnEliminarConBorde}>🗑️ Eliminar Cierre</button>
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              ) : (
-                <table className={styles.tablaApp}>
-                  <thead>
-                    <tr><th>Fecha Cierre</th><th>Base</th><th>Total Sistema</th><th>Efectivo Real</th><th>Diferencia</th><th>Acciones</th></tr>
-                  </thead>
-                  <tbody>
-                    {cierres.map((c) => (
-                      <tr key={c.id}>
-                        <td>{formatearFecha(c.fecha)}</td>
-                        <td>${c.base_inicial?.toLocaleString() || 0}</td>
-                        <td>${c.total_sistema.toLocaleString()}</td>
-                        <td>${c.efectivo_real.toLocaleString()}</td>
-                        <td style={{ color: c.diferencia_efectivo < 0 ? '#dc2626' : '#16a34a', fontWeight: 'bold' }}>
-                          ${(c.diferencia_efectivo + c.diferencia_tarjeta + c.diferencia_transferencia).toLocaleString()}
-                        </td>
-                        <td>
-                          <button onClick={() => eliminarCierre(c.id)} className={styles.btnEliminarConBorde}>🗑️ Eliminar Cierre</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
               )}
             </div>
           )}
@@ -913,23 +1009,25 @@ export default function Home() {
                 <button type="submit" className={styles.btnAgregarConBorde}>Guardar Insumo</button>
               </form>
 
-              <table className={styles.tablaApp}>
-                <thead>
-                  <tr><th>Insumo</th><th>Stock Teórico</th><th>Conteo Físico Real</th><th>Acción</th></tr>
-                </thead>
-                <tbody>
-                  {insumos.map((i) => (
-                    <tr key={i.id}>
-                      <td><strong>{i.nombre}</strong></td>
-                      <td>{i.stock_actual} {i.unidad}</td>
-                      <td>
-                        <input type="number" placeholder="Real" className={styles.cantInput} value={conteosFisicos[i.id] || ''} onChange={(e) => setConteosFisicos({ ...conteosFisicos, [i.id]: e.target.value })} />
-                      </td>
-                      <td><button onClick={() => actualizarStockFisico(i.id)} className={styles.btnVerConBorde}>Rectificar</button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className={styles.tablaResponsiveContainer}>
+                <table className={styles.tablaApp}>
+                  <thead>
+                    <tr><th>Insumo</th><th>Stock Teórico</th><th>Conteo Físico Real</th><th>Acción</th></tr>
+                  </thead>
+                  <tbody>
+                    {insumos.map((i) => (
+                      <tr key={i.id}>
+                        <td><strong>{i.nombre}</strong></td>
+                        <td>{i.stock_actual} {i.unidad}</td>
+                        <td>
+                          <input type="number" placeholder="Real" className={styles.cantInput} value={conteosFisicos[i.id] || ''} onChange={(e) => setConteosFisicos({ ...conteosFisicos, [i.id]: e.target.value })} />
+                        </td>
+                        <td><button onClick={() => actualizarStockFisico(i.id)} className={styles.btnVerConBorde}>Rectificar</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
@@ -980,45 +1078,47 @@ export default function Home() {
               </form>
 
               <h3 style={{ marginTop: '28px' }}>📋 Recetas Registradas</h3>
-              <table className={styles.tablaApp}>
-                <thead>
-                  <tr><th>Producto</th><th>Insumo Consumido</th><th>Cantidad Requerida</th><th>Acciones</th></tr>
-                </thead>
-                <tbody>
-                  {recetas.map((r) => {
-                    const prod = productos.find((p) => p.id === r.producto_id);
-                    const ins = insumos.find((i) => i.id === r.insumo_id);
+              <div className={styles.tablaResponsiveContainer}>
+                <table className={styles.tablaApp}>
+                  <thead>
+                    <tr><th>Producto</th><th>Insumo Consumido</th><th>Cantidad Requerida</th><th>Acciones</th></tr>
+                  </thead>
+                  <tbody>
+                    {recetas.map((r) => {
+                      const prod = productos.find((p) => p.id === r.producto_id);
+                      const ins = insumos.find((i) => i.id === r.insumo_id);
 
-                    return (
-                      <tr key={r.id}>
-                        <td><strong>{prod ? prod.nombre : 'Producto no encontrado'}</strong></td>
-                        <td>{ins ? `${ins.nombre} (${ins.unidad})` : 'Insumo no encontrado'}</td>
-                        <td>
-                          {recetaEditandoId === r.id ? (
-                            <input
-                              type="number"
-                              step="any"
-                              className={styles.cantInput}
-                              value={cantEditandoVal}
-                              onChange={(e) => setCantEditandoVal(e.target.value)}
-                            />
-                          ) : (
-                            `${r.cantidad_requerida} ${ins ? ins.unidad : ''}`
-                          )}
-                        </td>
-                        <td>
-                          {recetaEditandoId === r.id ? (
-                            <button onClick={() => editarCantidadReceta(r.id)} className={styles.btnAgregarConBorde}>💾 Guardar</button>
-                          ) : (
-                            <button onClick={() => { setRecetaEditandoId(r.id); setCantEditandoVal(r.cantidad_requerida.toString()); }} className={styles.btnVerConBorde}>✏️ Editar</button>
-                          )}
-                          <button onClick={() => eliminarRecetaItem(r.id)} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>🗑️</button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                      return (
+                        <tr key={r.id}>
+                          <td><strong>{prod ? prod.nombre : 'Producto no encontrado'}</strong></td>
+                          <td>{ins ? `${ins.nombre} (${ins.unidad})` : 'Insumo no encontrado'}</td>
+                          <td>
+                            {recetaEditandoId === r.id ? (
+                              <input
+                                type="number"
+                                step="any"
+                                className={styles.cantInput}
+                                value={cantEditandoVal}
+                                onChange={(e) => setCantEditandoVal(e.target.value)}
+                              />
+                            ) : (
+                              `${r.cantidad_requerida} ${ins ? ins.unidad : ''}`
+                            )}
+                          </td>
+                          <td>
+                            {recetaEditandoId === r.id ? (
+                              <button onClick={() => editarCantidadReceta(r.id)} className={styles.btnAgregarConBorde}>💾 Guardar</button>
+                            ) : (
+                              <button onClick={() => { setRecetaEditandoId(r.id); setCantEditandoVal(r.cantidad_requerida.toString()); }} className={styles.btnVerConBorde}>✏️ Editar</button>
+                            )}
+                            <button onClick={() => eliminarRecetaItem(r.id)} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>🗑️</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
@@ -1034,23 +1134,77 @@ export default function Home() {
                 <button type="submit" className={styles.btnAgregarConBorde}>{productoEditando ? 'Guardar Cambios' : 'Agregar Al Menú'}</button>
               </form>
 
-              <table className={styles.tablaApp}>
-                <thead><tr><th>Producto</th><th>Precio</th><th>Acciones</th></tr></thead>
+              <div className={styles.tablaResponsiveContainer}>
+                <table className={styles.tablaApp}>
+                  <thead><tr><th>Producto</th><th>Precio</th><th>Acciones</th></tr></thead>
+                  <tbody>
+                    {productos.map((p) => (
+                      <tr key={p.id}>
+                        <td>{p.nombre}</td>
+                        <td>${p.precio.toLocaleString()}</td>
+                        <td>
+                          <button onClick={() => { setProductoEditando(p); setNuevoNombre(p.nombre); setNuevoPrecio(p.precio.toString()); }} className={styles.btnVerConBorde}>✏️ Editar</button>
+                          <button onClick={async () => { await supabase.from('productos').delete().eq('id', p.id); if (usuario) obtenerProductos(usuario.id); }} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>🗑️ Eliminar</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* MODAL TICKET DE COMANDA PARA COCINA */}
+      {comandaImprimir && (
+        <div className={styles.overlayModal} onClick={() => setComandaImprimir(null)}>
+          <div className={styles.modalContentTicket} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.ticketImpresionArea}>
+              <div style={{ textAlign: 'center', borderBottom: '2px dashed #0f172a', paddingBottom: '8px', marginBottom: '8px' }}>
+                <h2 style={{ margin: 0, fontSize: '20px' }}>👨‍🍳 PEDIDO COCINA</h2>
+                <h3 style={{ margin: '4px 0 0', fontSize: '18px' }}>COMANDA #{comandaImprimir.numero}</h3>
+                <p style={{ margin: '2px 0', fontSize: '12px' }}><strong>MESA:</strong> {comandaImprimir.mesa}</p>
+                <p style={{ margin: '2px 0', fontSize: '12px', color: '#475569' }}>Hora Entrada: {comandaImprimir.hora}</p>
+              </div>
+
+              <div style={{ fontSize: '12px', marginBottom: '8px' }}>
+                <p style={{ margin: '2px 0' }}><strong>Cliente:</strong> {comandaImprimir.cliente}</p>
+              </div>
+
+              <table className={styles.tablaTicketPreview}>
+                <thead>
+                  <tr><th>Cant.</th><th>Producto</th></tr>
+                </thead>
                 <tbody>
-                  {productos.map((p) => (
-                    <tr key={p.id}>
-                      <td>{p.nombre}</td>
-                      <td>${p.precio.toLocaleString()}</td>
-                      <td>
-                        <button onClick={() => { setProductoEditando(p); setNuevoNombre(p.nombre); setNuevoPrecio(p.precio.toString()); }} className={styles.btnVerConBorde}>✏️ Editar</button>
-                        <button onClick={async () => { await supabase.from('productos').delete().eq('id', p.id); if (usuario) obtenerProductos(usuario.id); }} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>🗑️ Eliminar</button>
-                      </td>
+                  {comandaImprimir.items.map((item, idx) => (
+                    <tr key={idx}>
+                      <td style={{ fontWeight: 'bold', fontSize: '15px' }}>{item.cantidad}x</td>
+                      <td style={{ fontSize: '14px', fontWeight: 'bold' }}>{item.nombre}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+
+              {comandaImprimir.comentario && (
+                <div style={{ marginTop: '12px', background: '#f1f5f9', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 'bold', display: 'block', color: '#0f172a' }}>📌 OBSERVACIONES:</span>
+                  <p style={{ margin: '2px 0 0', fontSize: '13px', fontWeight: 'bold', color: '#b91c1c' }}>
+                    {comandaImprimir.comentario}
+                  </p>
+                </div>
+              )}
             </div>
-          )}
+
+            <div className={styles.modalActions}>
+              <button onClick={() => { window.print(); setComandaImprimir(null); }} className={styles.btnCobrar} style={{ flex: 1 }}>
+                🖨️ Imprimir Comanda
+              </button>
+              <button onClick={() => setComandaImprimir(null)} className={styles.btnAgregarConBorde}>
+                Cerrar
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1061,13 +1215,13 @@ export default function Home() {
             <div className={styles.columnaPreviewFactura}>
               <div style={{ textAlign: 'center', borderBottom: '2px dashed #cbd5e1', paddingBottom: '8px', marginBottom: '8px' }}>
                 <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>{perfil?.nombre_local || 'Mi Negocio'}</h3>
-                <p style={{ margin: '2px 0', fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>Propietario: {perfil?.nombre_persona || 'N/A'}</p>
+                <p style={{ margin: '2px 0', fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>Propietario: {perfil?.nombre_persona || 'Propietario'}</p>
                 <p style={{ margin: '2px 0', fontSize: '12px', color: '#475569' }}>NIT / CC: {perfil?.documento || 'N/A'}</p>
-                <p style={{ margin: '2px 0', fontSize: '12px', color: '#475569' }}>Dir: {perfil?.direccion} | Tel: {perfil?.telefono}</p>
+                <p style={{ margin: '2px 0', fontSize: '12px', color: '#475569' }}>Dir: {perfil?.direccion || 'N/A'} | Tel: {perfil?.telefono || 'N/A'}</p>
               </div>
 
               <p style={{ fontSize: '13px', margin: '4px 0' }}><strong>Mesa:</strong> {mesaSeleccionada.nombre}</p>
-              <p style={{ fontSize: '13px', margin: '4px 0' }}><strong>Cliente:</strong> {cliente.nombre || 'Consumidor Final'}</p>
+              <p style={{ fontSize: '13px', margin: '4px 0' }}><strong>Cliente:</strong> {clienteNombreMesa || 'Consumidor Final'}</p>
 
               <table className={styles.tablaTicketPreview}>
                 <thead>
@@ -1166,9 +1320,9 @@ export default function Home() {
             <div className={styles.ticketImpresionArea}>
               <div style={{ textAlign: 'center', borderBottom: '2px dashed #0f172a', paddingBottom: '8px', marginBottom: '8px' }}>
                 <h2 style={{ margin: 0, fontSize: '20px' }}>{perfil?.nombre_local || 'Mi Negocio'}</h2>
-                <p style={{ margin: '2px 0', fontSize: '12px', fontWeight: 'bold' }}>Propietario: {perfil?.nombre_persona || 'N/A'}</p>
+                <p style={{ margin: '2px 0', fontSize: '12px', fontWeight: 'bold' }}>Propietario: {perfil?.nombre_persona || 'Propietario'}</p>
                 <p style={{ margin: '2px 0', fontSize: '12px' }}>NIT / CC: {perfil?.documento || 'N/A'}</p>
-                <p style={{ margin: '2px 0', fontSize: '12px' }}>Dir: {perfil?.direccion} | Tel: {perfil?.telefono}</p>
+                <p style={{ margin: '2px 0', fontSize: '12px' }}>Dir: {perfil?.direccion || 'N/A'} | Tel: {perfil?.telefono || 'N/A'}</p>
                 <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#64748b' }}>{formatearFecha((ventaConfirmadaTicket || ventaSeleccionada)!.created_at)}</p>
               </div>
 

@@ -694,3 +694,30 @@
     display: none !important;
   }
 }
+
+/* TABLAS RESPONSIVAS EN MÓVIL */
+.tablaResponsiveContainer {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-top: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+@media (max-width: 640px) {
+  .subSubBarra {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  
+  .subSubBarra button {
+    width: 100%;
+  }
+
+  .gridMetricasCaja {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+}
