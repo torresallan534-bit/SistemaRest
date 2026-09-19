@@ -14,6 +14,14 @@ interface Mesa { id: string; nombre: string; estado: 'libre' | 'ocupada'; pedido
 interface CierreCaja { id: string; fecha: string; base_inicial: number; total_sistema: number; efectivo_sistema: number; tarjeta_sistema: number; transferencia_sistema: number; efectivo_real: number; tarjeta_real: number; transferencia_real: number; diferencia_efectivo: number; diferencia_tarjeta: number; diferencia_transferencia: number; }
 
 export default function Home() {
+  // Autenticación
+  const [usuario, setUsuario] = useState<any>(null);
+  const [emailInput, setEmailInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [esRegistro, setEsRegistro] = useState(false);
+  const [cargandoAuth, setCargandoAuth] = useState(true);
+
+  // Navegación
   const [modulo, setModulo] = useState<'ventas' | 'produccion'>('ventas');
   const [subPestanaVentas, setSubPestanaVentas] = useState<'mesas' | 'caja' | 'historial'>('mesas');
   const [subPestanaProduccion, setSubPestanaProduccion] = useState<'inventario' | 'recetas' | 'productos'>('inventario');
@@ -27,7 +35,7 @@ export default function Home() {
   const [mesas, setMesas] = useState<Mesa[]>([]);
   const [cierres, setCierres] = useState<CierreCaja[]>([]);
 
-  // Control de Arqueo / Jornada
+  // Control Arqueo
   const [cajaAbierta, setCajaAbierta] = useState<boolean>(false);
   const [baseEfectivoInput, setBaseEfectivoInput] = useState<string>('');
   const [baseEfectivoJornada, setBaseEfectivoJornada] = useState<number>(0);
@@ -63,9 +71,55 @@ export default function Home() {
   const [ventaSeleccionada, setVentaSeleccionada] = useState<Venta | null>(null);
   const [cierreFiltroSeleccionado, setCierreFiltroSeleccionado] = useState<string>('abierta');
 
+  // Verificar sesión al cargar
   useEffect(() => {
-    cargarTodo();
+    verificarSesion();
   }, []);
+
+  const verificarSesion = async () => {
+    setCargandoAuth(true);
+    const { data } = await supabase.auth.getSession();
+    if (data.session) {
+      setUsuario(data.session.user);
+      cargarTodo();
+    } else {
+      setUsuario(null);
+    }
+    setCargandoAuth(false);
+  };
+
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!emailInput || !passwordInput) return alert('Completa correo y contraseña');
+
+    if (esRegistro) {
+      const { data, error } = await supabase.auth.signUp({
+        email: emailInput,
+        password: passwordInput,
+      });
+      if (error) alert('Error en registro: ' + error.message);
+      else {
+        alert('Registro exitoso. ¡Iniciando sesión!');
+        setUsuario(data.user);
+        cargarTodo();
+      }
+    } else {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: emailInput,
+        password: passwordInput,
+      });
+      if (error) alert('Error de acceso: ' + error.message);
+      else {
+        setUsuario(data.user);
+        cargarTodo();
+      }
+    }
+  };
+
+  const cerrarSesion = async () => {
+    await supabase.auth.signOut();
+    setUsuario(null);
+  };
 
   const cargarTodo = async () => {
     await Promise.all([
@@ -108,22 +162,18 @@ export default function Home() {
     if (data) setCierres(data as CierreCaja[]);
   };
 
-  // Ventas de la jornada activa (sin asignar a cierre)
   const ventasJornadaActual = ventas.filter((v) => !v.cierre_id);
   const totalHoy = ventasJornadaActual.reduce((acc, v) => acc + (v.total || 0), 0);
   const totalEfectivoHoy = ventasJornadaActual.filter((v) => (v.metodo_pago || 'Efectivo') === 'Efectivo').reduce((acc, v) => acc + (v.total || 0), 0);
   const totalTarjetaHoy = ventasJornadaActual.filter((v) => v.metodo_pago === 'Tarjeta').reduce((acc, v) => acc + (v.total || 0), 0);
   const totalTransferenciaHoy = ventasJornadaActual.filter((v) => v.metodo_pago === 'Transferencia').reduce((acc, v) => acc + (v.total || 0), 0);
 
-  // Efectivo total esperado en caja = Base inicial + Ventas en efectivo
   const efectivoEsperadoEnCaja = baseEfectivoJornada + totalEfectivoHoy;
 
-  // Diferencias Cierre
   const difEfectivo = efectivoReal !== '' ? (parseFloat(efectivoReal) || 0) - efectivoEsperadoEnCaja : null;
   const difTarjeta = tarjetaReal !== '' ? (parseFloat(tarjetaReal) || 0) - totalTarjetaHoy : null;
   const difTransferencia = transferenciaReal !== '' ? (parseFloat(transferenciaReal) || 0) - totalTransferenciaHoy : null;
 
-  // Apertura de caja
   const abrirCajaJornada = () => {
     const baseNum = parseFloat(baseEfectivoInput) || 0;
     setBaseEfectivoJornada(baseNum);
@@ -131,7 +181,6 @@ export default function Home() {
     alert(`Caja abierta exitosamente con una base inicial de $${baseNum.toLocaleString()}`);
   };
 
-  // Mesas
   const seleccionarMesa = (m: Mesa) => {
     if (!cajaAbierta) {
       alert('⚠️ Debes realizar la apertura de caja antes de atender mesas.');
@@ -181,7 +230,6 @@ export default function Home() {
 
     if (productosValidos.length === 0) return alert('No hay productos en la mesa');
 
-    // Descontar inventario
     for (const pVal of productosValidos) {
       const ingredientes = recetas.filter((r) => r.producto_id === pVal.productoId);
       for (const ing of ingredientes) {
@@ -213,7 +261,6 @@ export default function Home() {
     setMostrarModalFactura(true);
   };
 
-  // Cierre de caja
   const realizarCierreCaja = async () => {
     if (!confirm('¿Seguro de realizar el cierre de caja? Esto dará por finalizada la jornada laboral.')) return;
 
@@ -256,38 +303,21 @@ export default function Home() {
     }
   };
 
-  // Borrar Venta de la BD
   const eliminarVenta = async (id: number) => {
-    if (!confirm(`¿Estás seguro de eliminar permanentemente la venta #${id}?`)) return;
-
+    if (!confirm(`¿Estás seguro de eliminar la venta #${id}?`)) return;
     const { error } = await supabase.from('ventas').delete().eq('id', id);
-
-    if (error) {
-      alert('Error al eliminar venta: ' + error.message);
-    } else {
-      alert('Venta eliminada correctamente');
-      obtenerVentas();
-    }
+    if (error) alert('Error al eliminar venta: ' + error.message);
+    else obtenerVentas();
   };
 
-  // Borrar Cierre de Caja
   const eliminarCierre = async (cierreId: string) => {
-    if (!confirm('¿Seguro de eliminar este cierre de caja? Las ventas vinculadas volverán a quedar abiertas.')) return;
-
-    // Desvincular ventas
+    if (!confirm('¿Seguro de eliminar este cierre de caja? Las ventas volverán a quedar abiertas.')) return;
     await supabase.from('ventas').update({ cierre_id: null }).eq('cierre_id', cierreId);
-    // Eliminar cierre
     const { error } = await supabase.from('cierres_caja').delete().eq('id', cierreId);
-
-    if (error) {
-      alert('Error al eliminar el cierre: ' + error.message);
-    } else {
-      alert('Cierre de caja eliminado. Las ventas regresaron a la jornada activa.');
-      cargarTodo();
-    }
+    if (error) alert('Error al eliminar el cierre: ' + error.message);
+    else cargarTodo();
   };
 
-  // Producción
   const guardarRecetaMultiple = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!prodRecetaSel) return alert('Selecciona un producto');
@@ -361,6 +391,73 @@ export default function Home() {
     ? ventas.filter((v) => !v.cierre_id)
     : ventas.filter((v) => v.cierre_id === cierreFiltroSeleccionado);
 
+  // SI ESTÁ CARGANDO AUTH
+  if (cargandoAuth) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', fontFamily: 'sans-serif' }}>
+        <h3>Cargando sistema RestoPOS...</h3>
+      </div>
+    );
+  }
+
+  // PANTALLA DE LOGIN
+  if (!usuario) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: '#0f172a', fontFamily: 'sans-serif' }}>
+        <div style={{ background: 'white', padding: '32px', borderRadius: '16px', border: '2px solid #cbd5e1', maxWidth: '400px', width: '90%', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)' }}>
+          <h2 style={{ margin: '0 0 8px', color: '#0f172a', textAlign: 'center' }}>🍽️ RestoPOS Pro</h2>
+          <p style={{ margin: '0 0 24px', color: '#64748b', textAlign: 'center', fontSize: '14px' }}>
+            {esRegistro ? 'Crea una cuenta para tu negocio' : 'Inicia sesión para continuar'}
+          </p>
+
+          <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#475569', display: 'block', marginBottom: '4px' }}>Correo Electrónico</label>
+              <input
+                type="email"
+                placeholder="usuario@negocio.com"
+                value={emailInput}
+                onChange={(e) => setEmailInput(e.target.value)}
+                style={{ width: '100%', padding: '10px', border: '1.5px solid #94a3b8', borderRadius: '8px', boxSizing: 'border-box' }}
+                required
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#475569', display: 'block', marginBottom: '4px' }}>Contraseña</label>
+              <input
+                type="password"
+                placeholder="••••••••"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                style={{ width: '100%', padding: '10px', border: '1.5px solid #94a3b8', borderRadius: '8px', boxSizing: 'border-box' }}
+                required
+              />
+            </div>
+
+            <button
+              type="submit"
+              style={{ background: '#2563eb', color: 'white', border: '2px solid #1d4ed8', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer', marginTop: '8px' }}
+            >
+              {esRegistro ? 'Registrar Cuenta' : 'Iniciar Sesión'}
+            </button>
+          </form>
+
+          <div style={{ marginTop: '20px', textAlign: 'center', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
+            <button
+              type="button"
+              onClick={() => setEsRegistro(!esRegistro)}
+              style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: '600', cursor: 'pointer', fontSize: '13px' }}
+            >
+              {esRegistro ? '¿Ya tienes cuenta? Inicia sesión' : '¿No tienes cuenta? Regístrate aquí'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // PANTALLA PRINCIPAL CON SESIÓN INICIADA
   return (
     <div className={styles.contenedorApp}>
       {/* NAVEGACIÓN PRINCIPAL */}
@@ -372,6 +469,9 @@ export default function Home() {
           </button>
           <button className={`${styles.btnModulo} ${modulo === 'produccion' ? styles.activeModulo : ''}`} onClick={() => setModulo('produccion')}>
             📦 Producción y Costes
+          </button>
+          <button onClick={cerrarSesion} className={styles.btnEliminarConBorde} style={{ marginLeft: '12px' }}>
+            🚪 Salir ({usuario.email?.split('@')[0]})
           </button>
         </div>
       </nav>
@@ -385,11 +485,9 @@ export default function Home() {
             <button className={subPestanaVentas === 'historial' ? styles.subActive : ''} onClick={() => setSubPestanaVentas('historial')}>📋 Historiales</button>
           </div>
 
-          {/* MESAS CON ARQUEO LATERAL IZQUIERDO */}
+          {/* MESAS */}
           {subPestanaVentas === 'mesas' && (
             <div className={styles.layoutTresColumnas}>
-              
-              {/* COLUMNA 1: WIDGET DE ARQUEO DE CAJA Y APERTURA */}
               <div className={styles.widgetArqueoIzquierdo}>
                 <div className={styles.cardArqueoHeader}>
                   <h4>💵 Arqueo de Caja</h4>
@@ -400,7 +498,7 @@ export default function Home() {
 
                 {!cajaAbierta ? (
                   <div className={styles.aperturaBox}>
-                    <p style={{ fontSize: '13px', color: '#64748b' }}>Ingresa la base inicial para comenzar el servicio:</p>
+                    <p style={{ fontSize: '13px', color: '#64748b' }}>Ingresa la base inicial para comenzar:</p>
                     <input
                       type="number"
                       placeholder="Base ($)"
@@ -423,7 +521,6 @@ export default function Home() {
                 )}
               </div>
 
-              {/* COLUMNA 2: MAPA DE MESAS */}
               <div className={styles.seccionMesasGrid}>
                 <div className={styles.headerConBoton}>
                   <h3>Mapa de Mesas</h3>
@@ -449,7 +546,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* COLUMNA 3: COMANDERA DE LA MESA */}
               <div className={styles.panelPedidoMesa}>
                 {mesaSeleccionada ? (
                   <>
@@ -650,7 +746,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* MÓDULO PRODUCCIÓN Y COSTES */}
+      {/* MÓDULO PRODUCCIÓN */}
       {modulo === 'produccion' && (
         <div>
           <div className={styles.subBarra}>
@@ -815,7 +911,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* MODAL IMPRESIÓN / DETALLE */}
+      {/* MODAL DETALLE DE VENTA */}
       {(mostrarModalFactura || ventaSeleccionada) && (
         <div className={styles.overlayModal} onClick={() => { setMostrarModalFactura(false); setVentaSeleccionada(null); }}>
           <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
