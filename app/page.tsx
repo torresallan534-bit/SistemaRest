@@ -11,7 +11,7 @@ interface LineaFactura { id: number; productoId: string; cantidad: number; }
 interface ProductoVenta { nombre: string; cantidad: number; precioUnitario: number; subtotal: number; }
 interface Venta { id: number; created_at: string; cliente: string; documento: string; metodo_pago: string; total: number; productos: ProductoVenta[]; cierre_id?: string; }
 interface Mesa { id: string; nombre: string; estado: 'libre' | 'ocupada'; pedidos: LineaFactura[]; }
-interface CierreCaja { id: string; fecha: string; total_sistema: number; efectivo_sistema: number; tarjeta_sistema: number; transferencia_sistema: number; efectivo_real: number; tarjeta_real: number; transferencia_real: number; diferencia_efectivo: number; diferencia_tarjeta: number; diferencia_transferencia: number; }
+interface CierreCaja { id: string; fecha: string; base_inicial: number; total_sistema: number; efectivo_sistema: number; tarjeta_sistema: number; transferencia_sistema: number; efectivo_real: number; tarjeta_real: number; transferencia_real: number; diferencia_efectivo: number; diferencia_tarjeta: number; diferencia_transferencia: number; }
 
 export default function Home() {
   const [modulo, setModulo] = useState<'ventas' | 'produccion'>('ventas');
@@ -19,7 +19,7 @@ export default function Home() {
   const [subPestanaProduccion, setSubPestanaProduccion] = useState<'inventario' | 'recetas' | 'productos'>('inventario');
   const [subPestanaHistorial, setSubPestanaHistorial] = useState<'ventas' | 'cierres'>('ventas');
 
-  // Datos
+  // Datos principales
   const [productos, setProductos] = useState<Producto[]>([]);
   const [insumos, setInsumos] = useState<Insumo[]>([]);
   const [recetas, setRecetas] = useState<RecetaItem[]>([]);
@@ -27,26 +27,28 @@ export default function Home() {
   const [mesas, setMesas] = useState<Mesa[]>([]);
   const [cierres, setCierres] = useState<CierreCaja[]>([]);
 
-  // Mesas
+  // Control de Arqueo / Jornada
+  const [cajaAbierta, setCajaAbierta] = useState<boolean>(false);
+  const [baseEfectivoInput, setBaseEfectivoInput] = useState<string>('');
+  const [baseEfectivoJornada, setBaseEfectivoJornada] = useState<number>(0);
+
+  // Mesas y Pedidos
   const [mesaSeleccionada, setMesaSeleccionada] = useState<Mesa | null>(null);
   const [metodoPago, setMetodoPago] = useState<'Efectivo' | 'Tarjeta' | 'Transferencia'>('Efectivo');
   const [cliente, setCliente] = useState({ nombre: '', documento: '' });
   const [lineasMesa, setLineasMesa] = useState<LineaFactura[]>([]);
 
-  // Cierre de caja
+  // Cierre
   const [efectivoReal, setEfectivoReal] = useState('');
   const [tarjetaReal, setTarjetaReal] = useState('');
   const [transferenciaReal, setTransferenciaReal] = useState('');
 
-  // Form Recetas
+  // Formularios Producción
   const [prodRecetaSel, setProdRecetaSel] = useState('');
-  const [lineasReceta, setLineasReceta] = useState<{ insumo_id: string; cantidad_requerida: string }[]>([
-    { insumo_id: '', cantidad_requerida: '' }
-  ]);
+  const [lineasReceta, setLineasReceta] = useState<{ insumo_id: string; cantidad_requerida: string }[]>([{ insumo_id: '', cantidad_requerida: '' }]);
   const [recetaEditandoId, setRecetaEditandoId] = useState<string | null>(null);
   const [cantEditandoVal, setCantEditandoVal] = useState('');
 
-  // Form Insumos & Productos
   const [nuevoNombreMesa, setNuevoNombreMesa] = useState('');
   const [nuevoNombre, setNuevoNombre] = useState('');
   const [nuevoPrecio, setNuevoPrecio] = useState('');
@@ -66,12 +68,14 @@ export default function Home() {
   }, []);
 
   const cargarTodo = async () => {
-    obtenerProductos();
-    obtenerInsumos();
-    obtenerRecetas();
-    obtenerVentas();
-    obtenerMesas();
-    obtenerCierres();
+    await Promise.all([
+      obtenerProductos(),
+      obtenerInsumos(),
+      obtenerRecetas(),
+      obtenerVentas(),
+      obtenerMesas(),
+      obtenerCierres(),
+    ]);
   };
 
   const obtenerProductos = async () => {
@@ -104,19 +108,35 @@ export default function Home() {
     if (data) setCierres(data as CierreCaja[]);
   };
 
-  // Ventas de la jornada actual (ventas sin cierre asignado)
+  // Ventas de la jornada activa (sin asignar a cierre)
   const ventasJornadaActual = ventas.filter((v) => !v.cierre_id);
   const totalHoy = ventasJornadaActual.reduce((acc, v) => acc + (v.total || 0), 0);
   const totalEfectivoHoy = ventasJornadaActual.filter((v) => (v.metodo_pago || 'Efectivo') === 'Efectivo').reduce((acc, v) => acc + (v.total || 0), 0);
   const totalTarjetaHoy = ventasJornadaActual.filter((v) => v.metodo_pago === 'Tarjeta').reduce((acc, v) => acc + (v.total || 0), 0);
   const totalTransferenciaHoy = ventasJornadaActual.filter((v) => v.metodo_pago === 'Transferencia').reduce((acc, v) => acc + (v.total || 0), 0);
 
-  // Cálculos de Diferencia en Vivo Cierre de Caja
-  const difEfectivo = efectivoReal !== '' ? (parseFloat(efectivoReal) || 0) - totalEfectivoHoy : null;
+  // Efectivo total esperado en caja = Base inicial + Ventas en efectivo
+  const efectivoEsperadoEnCaja = baseEfectivoJornada + totalEfectivoHoy;
+
+  // Diferencias Cierre
+  const difEfectivo = efectivoReal !== '' ? (parseFloat(efectivoReal) || 0) - efectivoEsperadoEnCaja : null;
   const difTarjeta = tarjetaReal !== '' ? (parseFloat(tarjetaReal) || 0) - totalTarjetaHoy : null;
   const difTransferencia = transferenciaReal !== '' ? (parseFloat(transferenciaReal) || 0) - totalTransferenciaHoy : null;
 
+  // Apertura de caja
+  const abrirCajaJornada = () => {
+    const baseNum = parseFloat(baseEfectivoInput) || 0;
+    setBaseEfectivoJornada(baseNum);
+    setCajaAbierta(true);
+    alert(`Caja abierta exitosamente con una base inicial de $${baseNum.toLocaleString()}`);
+  };
+
+  // Mesas
   const seleccionarMesa = (m: Mesa) => {
+    if (!cajaAbierta) {
+      alert('⚠️ Debes realizar la apertura de caja antes de atender mesas.');
+      return;
+    }
     setMesaSeleccionada(m);
     setLineasMesa(m.pedidos || []);
   };
@@ -141,7 +161,7 @@ export default function Home() {
     const estado = lineasMesa.length > 0 ? 'ocupada' : 'libre';
     await supabase.from('mesas').update({ pedidos: lineasMesa, estado }).eq('id', mesaSeleccionada.id);
     obtenerMesas();
-    alert('Pedido guardado en la mesa');
+    alert('Comanda guardada');
   };
 
   const cobrarMesa = async () => {
@@ -161,6 +181,7 @@ export default function Home() {
 
     if (productosValidos.length === 0) return alert('No hay productos en la mesa');
 
+    // Descontar inventario
     for (const pVal of productosValidos) {
       const ingredientes = recetas.filter((r) => r.producto_id === pVal.productoId);
       for (const ing of ingredientes) {
@@ -192,13 +213,16 @@ export default function Home() {
     setMostrarModalFactura(true);
   };
 
-  // Cierre de caja con vinculación a las ventas de la jornada
+  // Cierre de caja
   const realizarCierreCaja = async () => {
+    if (!confirm('¿Seguro de realizar el cierre de caja? Esto dará por finalizada la jornada laboral.')) return;
+
     const efReal = parseFloat(efectivoReal) || 0;
     const tarReal = parseFloat(tarjetaReal) || 0;
     const transReal = parseFloat(transferenciaReal) || 0;
 
     const cierre = {
+      base_inicial: baseEfectivoJornada,
       total_sistema: totalHoy,
       efectivo_sistema: totalEfectivoHoy,
       tarjeta_sistema: totalTarjetaHoy,
@@ -206,7 +230,7 @@ export default function Home() {
       efectivo_real: efReal,
       tarjeta_real: tarReal,
       transferencia_real: transReal,
-      diferencia_efectivo: efReal - totalEfectivoHoy,
+      diferencia_efectivo: efReal - efectivoEsperadoEnCaja,
       diferencia_tarjeta: tarReal - totalTarjetaHoy,
       diferencia_transferencia: transReal - totalTransferenciaHoy,
     };
@@ -217,25 +241,53 @@ export default function Home() {
       alert('Error en el cierre: ' + error.message);
     } else if (cierreGuardado && cierreGuardado[0]) {
       const nuevoCierreId = cierreGuardado[0].id;
-      // Asignar id de este cierre a todas las ventas abiertas
       const idsVentasAbiertas = ventasJornadaActual.map((v) => v.id);
       if (idsVentasAbiertas.length > 0) {
         await supabase.from('ventas').update({ cierre_id: nuevoCierreId }).in('id', idsVentasAbiertas);
       }
 
-      alert('¡Cierre de jornada registrado exitosamente!');
+      alert('🔒 Cierre completado. La jornada ha sido finalizada.');
+      setCajaAbierta(false);
+      setBaseEfectivoJornada(0);
+      setBaseEfectivoInput('');
       setEfectivoReal(''); setTarjetaReal(''); setTransferenciaReal('');
+      setMesaSeleccionada(null);
+      await cargarTodo();
+    }
+  };
+
+  // Borrar Venta de la BD
+  const eliminarVenta = async (id: number) => {
+    if (!confirm(`¿Estás seguro de eliminar permanentemente la venta #${id}?`)) return;
+
+    const { error } = await supabase.from('ventas').delete().eq('id', id);
+
+    if (error) {
+      alert('Error al eliminar venta: ' + error.message);
+    } else {
+      alert('Venta eliminada correctamente');
+      obtenerVentas();
+    }
+  };
+
+  // Borrar Cierre de Caja
+  const eliminarCierre = async (cierreId: string) => {
+    if (!confirm('¿Seguro de eliminar este cierre de caja? Las ventas vinculadas volverán a quedar abiertas.')) return;
+
+    // Desvincular ventas
+    await supabase.from('ventas').update({ cierre_id: null }).eq('cierre_id', cierreId);
+    // Eliminar cierre
+    const { error } = await supabase.from('cierres_caja').delete().eq('id', cierreId);
+
+    if (error) {
+      alert('Error al eliminar el cierre: ' + error.message);
+    } else {
+      alert('Cierre de caja eliminado. Las ventas regresaron a la jornada activa.');
       cargarTodo();
     }
   };
 
-  const eliminarVenta = async (id: number) => {
-    if (!confirm('¿Seguro de eliminar esta venta del historial?')) return;
-    await supabase.from('ventas').delete().eq('id', id);
-    obtenerVentas();
-  };
-
-  // Múltiples recetas
+  // Producción
   const guardarRecetaMultiple = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!prodRecetaSel) return alert('Selecciona un producto');
@@ -248,7 +300,7 @@ export default function Home() {
         cantidad_requerida: parseFloat(l.cantidad_requerida),
       }));
 
-    if (inserciones.length === 0) return alert('Agrega al menos un insumo con cantidad');
+    if (inserciones.length === 0) return alert('Agrega al menos un insumo');
 
     await supabase.from('recetas').insert(inserciones);
     setProdRecetaSel('');
@@ -265,7 +317,7 @@ export default function Home() {
   };
 
   const eliminarRecetaItem = async (id: string) => {
-    if (!confirm('¿Eliminar este ingrediente de la receta?')) return;
+    if (!confirm('¿Eliminar ingrediente?')) return;
     await supabase.from('recetas').delete().eq('id', id);
     obtenerRecetas();
   };
@@ -305,14 +357,13 @@ export default function Home() {
     return acc + (p ? p.precio : 0) * f.cantidad;
   }, 0);
 
-  // Filtrado de ventas por Cierre
   const ventasFiltradasHistorial = cierreFiltroSeleccionado === 'abierta'
     ? ventas.filter((v) => !v.cierre_id)
     : ventas.filter((v) => v.cierre_id === cierreFiltroSeleccionado);
 
   return (
     <div className={styles.contenedorApp}>
-      {/* BARRA DE NAVEGACIÓN PRINCIPAL */}
+      {/* NAVEGACIÓN PRINCIPAL */}
       <nav className={styles.barrasNavegacion}>
         <div className={styles.brandTitle}>🍽️ RestoPOS Pro</div>
         <div className={styles.botonesModulo}>
@@ -325,7 +376,7 @@ export default function Home() {
         </div>
       </nav>
 
-      {/* MÓDULO 1: VENTAS */}
+      {/* MÓDULO VENTAS */}
       {modulo === 'ventas' && (
         <div>
           <div className={styles.subBarra}>
@@ -334,15 +385,51 @@ export default function Home() {
             <button className={subPestanaVentas === 'historial' ? styles.subActive : ''} onClick={() => setSubPestanaVentas('historial')}>📋 Historiales</button>
           </div>
 
-          {/* SUBSECCIÓN: MESAS */}
+          {/* MESAS CON ARQUEO LATERAL IZQUIERDO */}
           {subPestanaVentas === 'mesas' && (
-            <div className={styles.gridMesasLayout}>
+            <div className={styles.layoutTresColumnas}>
+              
+              {/* COLUMNA 1: WIDGET DE ARQUEO DE CAJA Y APERTURA */}
+              <div className={styles.widgetArqueoIzquierdo}>
+                <div className={styles.cardArqueoHeader}>
+                  <h4>💵 Arqueo de Caja</h4>
+                  <span className={cajaAbierta ? styles.statusAbierta : styles.statusCerrada}>
+                    {cajaAbierta ? '🟢 ABIERTA' : '🔴 CERRADA'}
+                  </span>
+                </div>
+
+                {!cajaAbierta ? (
+                  <div className={styles.aperturaBox}>
+                    <p style={{ fontSize: '13px', color: '#64748b' }}>Ingresa la base inicial para comenzar el servicio:</p>
+                    <input
+                      type="number"
+                      placeholder="Base ($)"
+                      className={styles.inputChico}
+                      value={baseEfectivoInput}
+                      onChange={(e) => setBaseEfectivoInput(e.target.value)}
+                    />
+                    <button onClick={abrirCajaJornada} className={styles.btnApertura}>
+                      🔓 ABRIR CAJA DEL DÍA
+                    </button>
+                  </div>
+                ) : (
+                  <div className={styles.resumenArqueoBox}>
+                    <div className={styles.filaResumen}><span>Base Inicial:</span><strong>${baseEfectivoJornada.toLocaleString()}</strong></div>
+                    <div className={styles.filaResumen}><span>💵 Efectivo:</span><strong>${totalEfectivoHoy.toLocaleString()}</strong></div>
+                    <div className={styles.filaResumen}><span>💳 Tarjeta:</span><strong>${totalTarjetaHoy.toLocaleString()}</strong></div>
+                    <div className={styles.filaResumen}><span>📲 Transferencia:</span><strong>${totalTransferenciaHoy.toLocaleString()}</strong></div>
+                    <div className={styles.filaResumenTotal}><span>Total en Caja:</span><strong>${(baseEfectivoJornada + totalHoy).toLocaleString()}</strong></div>
+                  </div>
+                )}
+              </div>
+
+              {/* COLUMNA 2: MAPA DE MESAS */}
               <div className={styles.seccionMesasGrid}>
                 <div className={styles.headerConBoton}>
                   <h3>Mapa de Mesas</h3>
                   <form onSubmit={agregarMesa} style={{ display: 'flex', gap: '8px' }}>
-                    <input type="text" placeholder="Nueva mesa" className={styles.inputChico} value={nuevoNombreMesa} onChange={(e) => setNuevoNombreMesa(e.target.value)} required />
-                    <button type="submit" className={styles.btnAgregarConBorde}>＋ Agregar Mesa</button>
+                    <input type="text" placeholder="Mesa" className={styles.inputChico} value={nuevoNombreMesa} onChange={(e) => setNuevoNombreMesa(e.target.value)} required />
+                    <button type="submit" className={styles.btnAgregarConBorde}>＋ Agregar</button>
                   </form>
                 </div>
 
@@ -362,6 +449,7 @@ export default function Home() {
                 </div>
               </div>
 
+              {/* COLUMNA 3: COMANDERA DE LA MESA */}
               <div className={styles.panelPedidoMesa}>
                 {mesaSeleccionada ? (
                   <>
@@ -412,21 +500,19 @@ export default function Home() {
                       <button className={styles.btnCobrar} onClick={cobrarMesa}>⚡ COBRAR Y FACTURAR</button>
                     </div>
                   </>
-                ) : (
-                  <div className={styles.sinMesa}>👈 Selecciona una mesa para tomar comanda</div>
-                )}
+                ) : null}
               </div>
             </div>
           )}
 
-          {/* SUBSECCIÓN: CIERRE DE CAJA */}
+          {/* CIERRE DE CAJA */}
           {subPestanaVentas === 'caja' && (
             <div className={styles.seccionCaja}>
               <h2>Control y Cierre de Caja (Jornada Activa)</h2>
 
               <div className={styles.gridMetricasCaja}>
-                <div className={styles.cardMetrica}><span>Total Jornada</span><h3>${totalHoy.toLocaleString()}</h3></div>
-                <div className={styles.cardMetrica}><span>Efectivo Sistema</span><h3 style={{ color: '#16a34a' }}>${totalEfectivoHoy.toLocaleString()}</h3></div>
+                <div className={styles.cardMetrica}><span>Base del Día</span><h3>${baseEfectivoJornada.toLocaleString()}</h3></div>
+                <div className={styles.cardMetrica}><span>Efectivo Esperado</span><h3 style={{ color: '#16a34a' }}>${efectivoEsperadoEnCaja.toLocaleString()}</h3></div>
                 <div className={styles.cardMetrica}><span>Tarjetas Sistema</span><h3 style={{ color: '#9333ea' }}>${totalTarjetaHoy.toLocaleString()}</h3></div>
                 <div className={styles.cardMetrica}><span>Transferencias Sistema</span><h3 style={{ color: '#ea580c' }}>${totalTransferenciaHoy.toLocaleString()}</h3></div>
               </div>
@@ -435,8 +521,8 @@ export default function Home() {
                 <h3>Ingresar Conteo Físico Real de Dinero</h3>
                 <div className={styles.gridArqueoInputs}>
                   <div>
-                    <label>💵 Efectivo Físico</label>
-                    <input type="number" placeholder="Ej. 85000" value={efectivoReal} onChange={(e) => setEfectivoReal(e.target.value)} />
+                    <label>💵 Efectivo Físico (Incluyendo Base)</label>
+                    <input type="number" placeholder="Monto real" value={efectivoReal} onChange={(e) => setEfectivoReal(e.target.value)} />
                     {difEfectivo !== null && (
                       <span className={difEfectivo < 0 ? styles.badgeDiferenciaError : styles.badgeDiferenciaOk}>
                         {difEfectivo === 0 ? '✅ Cuadre exacto' : difEfectivo < 0 ? `⚠️ Falta: $${difEfectivo.toLocaleString()}` : `➕ Sobra: +$${difEfectivo.toLocaleString()}`}
@@ -445,7 +531,7 @@ export default function Home() {
                   </div>
                   <div>
                     <label>💳 Tarjetas Físico</label>
-                    <input type="number" placeholder="Ej. 35000" value={tarjetaReal} onChange={(e) => setTarjetaReal(e.target.value)} />
+                    <input type="number" placeholder="Monto real" value={tarjetaReal} onChange={(e) => setTarjetaReal(e.target.value)} />
                     {difTarjeta !== null && (
                       <span className={difTarjeta < 0 ? styles.badgeDiferenciaError : styles.badgeDiferenciaOk}>
                         {difTarjeta === 0 ? '✅ Cuadre exacto' : difTarjeta < 0 ? `⚠️ Falta: $${difTarjeta.toLocaleString()}` : `➕ Sobra: +$${difTarjeta.toLocaleString()}`}
@@ -454,7 +540,7 @@ export default function Home() {
                   </div>
                   <div>
                     <label>📲 Transferencias Físico</label>
-                    <input type="number" placeholder="Ej. 25000" value={transferenciaReal} onChange={(e) => setTransferenciaReal(e.target.value)} />
+                    <input type="number" placeholder="Monto real" value={transferenciaReal} onChange={(e) => setTransferenciaReal(e.target.value)} />
                     {difTransferencia !== null && (
                       <span className={difTransferencia < 0 ? styles.badgeDiferenciaError : styles.badgeDiferenciaOk}>
                         {difTransferencia === 0 ? '✅ Cuadre exacto' : difTransferencia < 0 ? `⚠️ Falta: $${difTransferencia.toLocaleString()}` : `➕ Sobra: +$${difTransferencia.toLocaleString()}`}
@@ -463,14 +549,13 @@ export default function Home() {
                   </div>
                 </div>
 
-                <button className={styles.btnCierreAccion} onClick={realizarCierreCaja}>
-                  🔒 CERRAR JORNADA Y GUARDAR EN HISTORIAL
+                <button className={styles.btnCierreAccion} onClick={realizarCierreCaja} disabled={!cajaAbierta}>
+                  🔒 CERRAR JORNADA Y FINALIZAR DÍA
                 </button>
               </div>
 
-              {/* Ventas SOLO de esta jornada activa */}
               <div style={{ marginTop: '28px' }}>
-                <h3>Ventas de la Jornada Actual (Sin cerrar - {ventasJornadaActual.length})</h3>
+                <h3>Ventas de la Jornada Activa ({ventasJornadaActual.length})</h3>
                 <table className={styles.tablaApp}>
                   <thead>
                     <tr><th>Hora</th><th>Cliente</th><th>Método</th><th>Total</th><th>Acción</th></tr>
@@ -495,7 +580,7 @@ export default function Home() {
             </div>
           )}
 
-          {/* SUBSECCIÓN: HISTORIALES */}
+          {/* HISTORIALES */}
           {subPestanaVentas === 'historial' && (
             <div className={styles.seccionHistoriales}>
               <div className={styles.subSubBarra}>
@@ -507,8 +592,8 @@ export default function Home() {
                 <div>
                   <div style={{ margin: '16px 0', display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <label style={{ fontWeight: 'bold' }}>Filtrar por Cierre / Jornada:</label>
-                    <select className={styles.selectChico} style={{ maxWidth: '300px' }} value={cierreFiltroSeleccionado} onChange={(e) => setCierreFiltroSeleccionado(e.target.value)}>
-                      <option value="abierta">🟢 Jornada Actual (En servicio)</option>
+                    <select className={styles.selectChico} style={{ maxWidth: '350px' }} value={cierreFiltroSeleccionado} onChange={(e) => setCierreFiltroSeleccionado(e.target.value)}>
+                      <option value="abierta">🟢 Jornada Activa (En servicio)</option>
                       {cierres.map((c) => (
                         <option key={c.id} value={c.id}>
                           🔒 Cierre del {formatearFecha(c.fecha)} (${c.total_sistema.toLocaleString()})
@@ -529,8 +614,8 @@ export default function Home() {
                           <td>{v.metodo_pago}</td>
                           <td><strong>${v.total.toLocaleString()}</strong></td>
                           <td>
-                            <button onClick={() => setVentaSeleccionada(v)} className={styles.btnVerConBorde}>👁️</button>
-                            <button onClick={() => eliminarVenta(v.id)} className={styles.btnEliminarConBorde}>🗑️</button>
+                            <button onClick={() => setVentaSeleccionada(v)} className={styles.btnVerConBorde}>👁️ Detalle</button>
+                            <button onClick={() => eliminarVenta(v.id)} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>🗑️ Eliminar</button>
                           </td>
                         </tr>
                       ))}
@@ -540,16 +625,20 @@ export default function Home() {
               ) : (
                 <table className={styles.tablaApp}>
                   <thead>
-                    <tr><th>Fecha Cierre</th><th>Total Sistema</th><th>Efectivo Real</th><th>Diferencia Total</th></tr>
+                    <tr><th>Fecha Cierre</th><th>Base</th><th>Total Sistema</th><th>Efectivo Real</th><th>Diferencia</th><th>Acciones</th></tr>
                   </thead>
                   <tbody>
                     {cierres.map((c) => (
                       <tr key={c.id}>
                         <td>{formatearFecha(c.fecha)}</td>
+                        <td>${c.base_inicial?.toLocaleString() || 0}</td>
                         <td>${c.total_sistema.toLocaleString()}</td>
                         <td>${c.efectivo_real.toLocaleString()}</td>
                         <td style={{ color: c.diferencia_efectivo < 0 ? '#dc2626' : '#16a34a', fontWeight: 'bold' }}>
                           ${(c.diferencia_efectivo + c.diferencia_tarjeta + c.diferencia_transferencia).toLocaleString()}
+                        </td>
+                        <td>
+                          <button onClick={() => eliminarCierre(c.id)} className={styles.btnEliminarConBorde}>🗑️ Eliminar Cierre</button>
                         </td>
                       </tr>
                     ))}
@@ -561,7 +650,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* MÓDULO 2: PRODUCCIÓN Y COSTES */}
+      {/* MÓDULO PRODUCCIÓN Y COSTES */}
       {modulo === 'produccion' && (
         <div>
           <div className={styles.subBarra}>
@@ -605,7 +694,7 @@ export default function Home() {
             </div>
           )}
 
-          {/* RECETAS EDITABLES Y MÚLTIPLES INSUMOS */}
+          {/* RECETAS */}
           {subPestanaProduccion === 'recetas' && (
             <div className={styles.paddingBloque}>
               <form onSubmit={guardarRecetaMultiple} className={styles.formStandard}>
@@ -651,8 +740,7 @@ export default function Home() {
                 </div>
               </form>
 
-              {/* LISTA Y EDICIÓN A POSTERIORI DE RECETAS */}
-              <h3 style={{ marginTop: '28px' }}>📋 Recetas Registradas y Edición</h3>
+              <h3 style={{ marginTop: '28px' }}>📋 Recetas Registradas</h3>
               <table className={styles.tablaApp}>
                 <thead>
                   <tr><th>Producto</th><th>Insumo Consumido</th><th>Cantidad Requerida</th><th>Acciones</th></tr>
@@ -727,11 +815,11 @@ export default function Home() {
         </div>
       )}
 
-      {/* MODAL DETALLE DE VENTA / FACTURA */}
+      {/* MODAL IMPRESIÓN / DETALLE */}
       {(mostrarModalFactura || ventaSeleccionada) && (
         <div className={styles.overlayModal} onClick={() => { setMostrarModalFactura(false); setVentaSeleccionada(null); }}>
           <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
-            <h3>📄 Factura / Comanda de Venta</h3>
+            <h3>📄 Detalle de Venta</h3>
             {ventaSeleccionada && (
               <div>
                 <p><strong>Cliente:</strong> {ventaSeleccionada.cliente}</p>
