@@ -1,489 +1,317 @@
-.contenedor {
-  max-width: 600px;
-  margin: 20px auto;
-  padding: 24px;
-  background-color: #ffffff;
-  border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+.contenedorApp {
   font-family: system-ui, -apple-system, sans-serif;
+  background-color: #f8fafc;
+  min-height: 100vh;
+  color: #0f172a;
 }
 
-.cabeceraContenedor {
+/* NAVEGACIÓN PRINCIPAL */
+.barrasNavegacion {
+  background: #0f172a;
+  color: white;
+  padding: 12px 24px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
-.cabeceraContenedor .titulo {
-  margin: 0;
-  font-size: 22px;
-  color: #111827;
+.brandTitle {
+  font-size: 20px;
+  font-weight: 800;
 }
 
-.botonReiniciar {
-  background-color: #fee2e2;
-  color: #dc2626;
-  border: 1px solid #fca5a5;
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 13px;
+.botonesModulo {
+  display: flex;
+  gap: 8px;
+}
+
+.btnModulo {
+  background: #1e293b;
+  color: #94a3b8;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 8px;
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: all 0.2s;
 }
 
-.botonReiniciar:hover {
-  background-color: #fecaca;
+.activeModulo {
+  background: #2563eb;
+  color: white;
 }
 
-/* Sección cliente */
-.seccionCliente {
-  background-color: #f3f4f6;
-  padding: 14px;
-  border-radius: 8px;
-  margin-bottom: 16px;
+/* SUB-BARRAS DE NAVEGACIÓN */
+.subBarra, .subSubBarra {
+  display: flex;
+  background: white;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 8px 24px;
+  gap: 12px;
+  overflow-x: auto;
 }
 
-.subtituloSeccion {
-  margin: 0 0 10px 0;
-  font-size: 13px;
-  color: #374151;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+.subBarra button, .subSubBarra button {
+  background: none;
+  border: none;
+  padding: 8px 14px;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  border-radius: 6px;
+  white-space: nowrap;
 }
 
-.gridCliente {
+.subActive, .subSubActive {
+  background: #eff6ff !important;
+  color: #2563eb !important;
+}
+
+/* LAYOUT MESAS + COMANDERO */
+.gridMesasLayout {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 20px;
+  padding: 20px;
+}
+
+@media (max-width: 900px) {
+  .gridMesasLayout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.reticulaMesas {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.tarjetaMesa {
+  background: white;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  text-align: center;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s;
+}
+
+.mesaOcupada {
+  border-color: #ef4444;
+  background: #fef2f2;
+}
+
+.mesaSeleccionada {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+
+.badgeEstado {
+  font-size: 10px;
+  font-weight: 800;
+  color: #64748b;
+  display: block;
+}
+
+.btnTrashMesa {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* PANEL LATERAL PEDIDO */
+.panelPedidoMesa {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.formClienteGrid, .grid3Campos, .grid2Campos {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
-.input {
-  width: 100%;
+.grid3Campos {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+@media (max-width: 600px) {
+  .grid3Campos, .grid2Campos {
+    grid-template-columns: 1fr;
+  }
+}
+
+.inputChico, .selectChico, .cantInput {
   padding: 8px;
-  border: 1px solid #d1d5db;
+  border: 1px solid #cbd5e1;
   border-radius: 6px;
-  background-color: #ffffff;
-  color: #000000;
-  font-size: 14px;
-  box-sizing: border-box;
-}
-
-.input:focus {
-  outline: none;
-  border-color: #0070f3;
-}
-
-/* Filas de productos */
-.listaFilas {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.filaHorizontal {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  background-color: #f9fafb;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-}
-
-.columnaProducto {
-  flex: 2;
-  color: #000000;
-}
-
-.columnaCantidad {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  color: #000000;
-}
-
-.columnaSubtotal {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  color: #000000;
-}
-
-.label {
-  display: block;
-  font-size: 11px;
-  text-transform: uppercase;
-  color: #6b7280;
-  margin-bottom: 4px;
-  font-weight: 600;
-}
-
-.select {
   width: 100%;
-  padding: 8px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  background-color: #ffffff;
-  color: #000000;
 }
 
-.controlCantidad {
+.selectorMetodo {
   display: flex;
-  align-items: center;
   gap: 6px;
+  margin: 12px 0;
 }
 
-.botonCantidad {
-  width: 28px;
-  height: 28px;
-  border: 1px solid #d1d5db;
-  background-color: #ffffff;
-  border-radius: 4px;
-  cursor: pointer;
-  color: #000000;
-}
-
-.numeroCantidad {
-  font-weight: 600;
-  width: 20px;
-  text-align: center;
-  color: #000000;
-}
-
-.montoSubtotal {
-  font-weight: 600;
-  color: #111827;
-}
-
-.botonEliminar {
-  background: none;
-  border: none;
-  color: #ef4444;
-  cursor: pointer;
-  font-size: 16px;
-  padding: 4px;
-}
-
-.botonAgregar {
-  width: 100%;
-  margin-top: 12px;
-  padding: 10px;
-  background-color: #82a6ee;
-  border: 1px dashed #191b1f;
+.selectorMetodo button {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid #cbd5e1;
+  background: white;
   border-radius: 6px;
-  color: #0c0e11;
-  font-weight: 600;
   cursor: pointer;
 }
 
-.totalContenedor {
+.metodoSel {
+  background: #eff6ff !important;
+  border-color: #2563eb !important;
+  color: #2563eb;
+  font-weight: bold;
+}
+
+.filaPedido {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.footerTotalMesa {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 2px solid #e5e7eb;
   font-size: 18px;
-  color: #000000;
+  font-weight: bold;
+  margin: 16px 0;
 }
 
-.totalContenedor strong {
-  color: #059669;
-  font-size: 22px;
-}
-
-/* Modal */
-.botonFactura {
-  width: 100%;
-  margin-top: 16px;
-  padding: 12px;
-  background-color: #10b981;
-  color: #ffffff;
-  border: none;
-  border-radius: 6px;
-  font-size: 15px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.botonFactura:hover:not(:disabled) {
-  background-color: #059669;
-}
-
-.botonFactura:disabled {
-  background-color: #d1d5db;
-  cursor: not-allowed;
-}
-
-.overlayModal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background-color: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  animation: fadeIn 0.2s ease-in-out;
-}
-
-.contenidoModal {
-  background-color: #ffffff;
-  border-radius: 12px;
-  width: 90%;
-  max-width: 500px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-  overflow: hidden;
-}
-
-.cabeceraModal {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 20px;
-  background-color: #f8f9fa;
-  border-bottom: 1px solid #e9ecef;
-}
-
-.resumenFactura {
-  margin: 0;
-  font-size: 18px;
-  color: #000000;
-}
-
-.fechaFactura {
-  display: block;
-  font-size: 12px;
-  color: #6b7280;
-  margin-top: 2px;
-}
-
-.botonCerrarModal {
-  background: none;
-  border: none;
-  font-size: 18px;
-  cursor: pointer;
-  color: #6c757d;
-}
-
-.cuerpoModal {
-  padding: 20px;
-  color: #000000;
-}
-
-.datosEmpresa {
+.accionesMesa {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px dashed #d1d5db;
-  font-size: 13px;
-  color: #374151;
+  gap: 8px;
 }
 
-.nombreEmpresa {
-  font-size: 16px;
-  color: #111827;
-  font-weight: 700;
-}
-
-.datosClienteFactura {
-  margin-bottom: 14px;
-  padding: 8px 10px;
-  background-color: #f9fafb;
-  border-left: 3px solid #0070f3;
-  font-size: 13px;
-  color: #1f2937;
-}
-
-.tablaFactura {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
-  color: #000000;
-}
-
-.tablaFactura th,
-.tablaFactura td {
-  padding: 10px 8px;
-  text-align: left;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-.tablaFactura th {
-  color: #000000;
-}
-
-.totalFactura {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 20px;
-  padding-top: 12px;
-  border-top: 2px solid #1a1a1a;
-  color: #000000;
-}
-
-.totalFactura strong {
-  font-size: 20px;
-  color: #10b981;
-}
-
-.pieModal {
-  display: flex;
-  gap: 10px;
-  padding: 16px 20px;
-  background-color: #f8f9fa;
-  border-top: 1px solid #e9ecef;
-}
-
-.botonImprimir {
-  flex: 2;
-  padding: 10px;
-  background-color: #0070f3;
-  color: #ffffff;
-  border: none;
-  border-radius: 6px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.botonCerrarSecundario {
-  flex: 1;
-  padding: 10px;
-  background-color: #e9ecef;
-  color: #495057;
-  border: none;
-  border-radius: 6px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.noImprimir {
-  /* Marca clases no imprimibles */
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-/* ==========================================
-   ESTILOS EXCLUSIVOS PARA IMPRESIÓN (PDF)
-   ========================================== */
-@media print {
-  body * {
-    visibility: hidden;
-  }
-
-  .contenidoModal,
-  .contenidoModal * {
-    visibility: visible;
-  }
-
-  .noImprimir {
-    display: none !important;
-    visibility: hidden !important;
-  }
-
-  .contenidoModal {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    box-shadow: none !important;
-    border: none !important;
-    padding: 0 !important;
-    margin: 0 !important;
-  }
-
-  .cabeceraModal {
-    background: none !important;
-    border-bottom: 2px solid #000 !important;
-    padding-bottom: 10px !important;
-  }
-}
-
-/* Pestañas */
-.pestanasContenedor {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 20px;
-  border-bottom: 2px solid #e2e8f0;
-  padding-bottom: 10px;
-}
-
-.botonPestana {
-  background: transparent;
-  border: none;
-  padding: 10px 18px;
-  font-size: 1rem;
-  font-weight: 600;
-  color: #64748b;
-  cursor: pointer;
-  border-radius: 8px;
-  transition: all 0.2s ease;
-}
-
-.botonPestana:hover {
-  background: #f1f5f9;
-  color: #1e293b;
-}
-
-.pestanaActiva {
-  background: #2563eb !important;
-  color: white !important;
-}
-
-/* Historial */
-.seccionHistorial {
-  margin-top: 10px;
-  color: #000;
-}
-
-.textoVacio {
-  text-align: center;
-  color: #64748b;
-  margin-top: 30px;
-}
-
-.tablaHistorial {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 15px;
-}
-
-.tablaHistorial th,
-.tablaHistorial td {
-  padding: 12px;
-  text-align: left;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.tablaHistorial th {
-  background: #f8fafc;
-  color: #475569;
-  font-size: 0.9rem;
-}
-
-.botonVerDetalle {
-  background: #0284c7;
+.btnGuardarPedido {
+  background: #64748b;
   color: white;
   border: none;
-  padding: 6px 12px;
-  border-radius: 6px;
+  padding: 10px;
+  border-radius: 8px;
+  font-weight: bold;
   cursor: pointer;
-  font-size: 0.85rem;
 }
 
-.botonVerDetalle:hover {
-  background: #0369a1;
+.btnCobrar {
+  background: #16a34a;
+  color: white;
+  border: none;
+  padding: 12px;
+  border-radius: 8px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+/* CAJA Y ARQUEO */
+.seccionCaja, .paddingBloque {
+  padding: 24px;
+}
+
+.gridMetricasCaja {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.cardMetrica {
+  background: white;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.formArqueoCaja {
+  background: white;
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.gridArqueoInputs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.btnCierreAccion {
+  background: #dc2626;
+  color: white;
+  border: none;
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+/* TABLAS GENERALES */
+.tablaApp {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-top: 16px;
+}
+
+.tablaApp th, .tablaApp td {
+  padding: 12px;
+  border-bottom: 1px solid #f1f5f9;
+  text-align: left;
+}
+
+.btnVer, .btnEliminar, .btnAgregar {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+}
+
+.btnVer { background: #f1f5f9; }
+.btnEliminar { background: #fef2f2; color: #dc2626; }
+.btnAgregar { background: #2563eb; color: white; font-weight: bold; }
+
+/* MODALES */
+.overlayModal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 100;
+}
+
+.modalContent {
+  background: white;
+  padding: 24px;
+  border-radius: 12px;
+  max-width: 400px;
+  width: 90%;
+}
+
+.modalActions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
 }
