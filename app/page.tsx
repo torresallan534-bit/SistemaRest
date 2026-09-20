@@ -116,7 +116,7 @@ export default function Home() {
   const [ventaSeleccionada, setVentaSeleccionada] = useState<Venta | null>(null);
   const [cierreFiltroSeleccionado, setCierreFiltroSeleccionado] = useState<string>('abierta');
 
-  // Inicialización de Sesión
+  // Inicialización de Sesión Persistente
   useEffect(() => {
     const inicializarSesion = async () => {
       setCargandoAuth(true);
@@ -150,7 +150,7 @@ export default function Home() {
     };
   }, []);
 
-  // CANAL EN TIEMPO REAL: Sincronización instantánea entre dispositivos
+  // CANAL EN TIEMPO REAL: Sincronización de Mesas, Ventas y Arqueo de Caja
   useEffect(() => {
     if (!usuario?.id) return;
 
@@ -164,12 +164,18 @@ export default function Home() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'ventas', filter: `user_id=eq.${usuario.id}` },
-        () => obtenerVentas(usuario.id)
+        () => {
+          obtenerVentas(usuario.id);
+          obtenerJornadaActiva(usuario.id);
+        }
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'jornadas', filter: `user_id=eq.${usuario.id}` },
-        () => obtenerJornadaActiva(usuario.id)
+        async () => {
+          await obtenerJornadaActiva(usuario.id);
+          await obtenerVentas(usuario.id);
+        }
       )
       .subscribe();
 
@@ -213,7 +219,7 @@ export default function Home() {
         setPerfil(perfilObj);
         setUsuario(data.user);
 
-        // Generar 5 mesas iniciales por defecto
+        // Crear 5 mesas iniciales garantizadas
         const mesasIniciales = [
           { nombre: 'Mesa 1', user_id: data.user.id, estado: 'libre' },
           { nombre: 'Mesa 2', user_id: data.user.id, estado: 'libre' },
@@ -227,7 +233,7 @@ export default function Home() {
         alert('¡Registro exitoso! Tu negocio ha sido creado con 5 mesas por defecto.');
       }
     } else {
-      const { data, error } = await supabase.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email: emailInput,
         password: passwordInput,
       });
@@ -263,7 +269,7 @@ export default function Home() {
     ]);
   };
 
-  // Cargar estado de la caja directamente desde la Base de Datos
+  // Cargar estado de la caja de forma precisa desde la BD
   const obtenerJornadaActiva = async (uId: string) => {
     const { data } = await supabase
       .from('jornadas')
@@ -271,12 +277,13 @@ export default function Home() {
       .eq('user_id', uId)
       .eq('estado', 'abierta')
       .order('created_at', { ascending: false })
-      .maybeSingle();
+      .limit(1);
 
-    if (data) {
+    if (data && data.length > 0) {
+      const jornada = data[0];
       setCajaAbierta(true);
-      setBaseEfectivoJornada(data.base_inicial || 0);
-      setJornadaId(data.id);
+      setBaseEfectivoJornada(jornada.base_inicial || 0);
+      setJornadaId(jornada.id);
     } else {
       setCajaAbierta(false);
       setBaseEfectivoJornada(0);
@@ -340,7 +347,7 @@ export default function Home() {
   const difTarjeta = tarjetaReal !== '' ? (parseFloat(tarjetaReal) || 0) - totalTarjetaHoy : null;
   const difTransferencia = transferenciaReal !== '' ? (parseFloat(transferenciaReal) || 0) - totalTransferenciaHoy : null;
 
-  // Apertura de Caja Centralizada en la Base de Datos
+  // Apertura de caja centralizada
   const abrirCajaJornada = async () => {
     if (!usuario) return;
     const baseNum = parseFloat(baseEfectivoInput) || 0;
@@ -355,7 +362,7 @@ export default function Home() {
       setCajaAbierta(true);
       setBaseEfectivoJornada(baseNum);
       setJornadaId(data.id);
-      alert(`Caja abierta en todos los dispositivos con base de $${baseNum.toLocaleString()}`);
+      alert(`Caja abierta con base de $${baseNum.toLocaleString()}`);
     }
   };
 
@@ -499,7 +506,6 @@ export default function Home() {
     }
   };
 
-  // Cierre de caja global
   const realizarCierreCaja = async () => {
     if (!usuario) return;
     if (!confirm('¿Seguro de realizar el cierre de caja? Esto finalizará la jornada en todos los dispositivos.')) return;
@@ -534,7 +540,7 @@ export default function Home() {
         await supabase.from('ventas').update({ cierre_id: nuevoCierreId }).in('id', idsVentasAbiertas);
       }
 
-      // Cerrar la jornada en la Base de Datos
+      // Marcar jornada como cerrada en la BD
       if (jornadaId) {
         await supabase.from('jornadas').update({ estado: 'cerrada' }).eq('id', jornadaId);
       }
