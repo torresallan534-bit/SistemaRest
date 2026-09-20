@@ -150,7 +150,7 @@ export default function Home() {
     };
   }, []);
 
-  // CANAL EN TIEMPO REAL: Sincronización de Mesas, Ventas y Arqueo de Caja
+  // CANAL EN TIEMPO REAL: Sincronización instantánea entre dispositivos
   useEffect(() => {
     if (!usuario?.id) return;
 
@@ -219,7 +219,7 @@ export default function Home() {
         setPerfil(perfilObj);
         setUsuario(data.user);
 
-        // Crear 5 mesas iniciales garantizadas
+        // Crear 5 mesas iniciales
         const mesasIniciales = [
           { nombre: 'Mesa 1', user_id: data.user.id, estado: 'libre' },
           { nombre: 'Mesa 2', user_id: data.user.id, estado: 'libre' },
@@ -269,9 +269,11 @@ export default function Home() {
     ]);
   };
 
-  // Cargar estado de la caja de forma precisa desde la BD
+  // Obtener la jornada abierta directamente de la BD
   const obtenerJornadaActiva = async (uId: string) => {
-    const { data } = await supabase
+    if (!uId) return;
+
+    const { data, error } = await supabase
       .from('jornadas')
       .select('*')
       .eq('user_id', uId)
@@ -279,15 +281,44 @@ export default function Home() {
       .order('created_at', { ascending: false })
       .limit(1);
 
+    if (error) {
+      console.error('Error al obtener jornada:', error.message);
+      return;
+    }
+
     if (data && data.length > 0) {
       const jornada = data[0];
       setCajaAbierta(true);
-      setBaseEfectivoJornada(jornada.base_inicial || 0);
+      setBaseEfectivoJornada(Number(jornada.base_inicial) || 0);
       setJornadaId(jornada.id);
     } else {
       setCajaAbierta(false);
       setBaseEfectivoJornada(0);
       setJornadaId(null);
+    }
+  };
+
+  // Abrir caja garantizando inserción con user_id
+  const abrirCajaJornada = async () => {
+    if (!usuario?.id) return alert('No hay usuario autenticado');
+    const baseNum = parseFloat(baseEfectivoInput) || 0;
+
+    const { data, error } = await supabase
+      .from('jornadas')
+      .insert([
+        { user_id: usuario.id, base_inicial: baseNum, estado: 'abierta' }
+      ])
+      .select()
+      .single();
+
+    if (error) {
+      alert('Error de Supabase al abrir caja: ' + error.message);
+    } else if (data) {
+      setCajaAbierta(true);
+      setBaseEfectivoJornada(baseNum);
+      setJornadaId(data.id);
+      setBaseEfectivoInput('');
+      alert(`✅ Caja abierta con base de $${baseNum.toLocaleString()}`);
     }
   };
 
@@ -346,25 +377,6 @@ export default function Home() {
   const difEfectivo = efectivoReal !== '' ? (parseFloat(efectivoReal) || 0) - efectivoEsperadoEnCaja : null;
   const difTarjeta = tarjetaReal !== '' ? (parseFloat(tarjetaReal) || 0) - totalTarjetaHoy : null;
   const difTransferencia = transferenciaReal !== '' ? (parseFloat(transferenciaReal) || 0) - totalTransferenciaHoy : null;
-
-  // Apertura de caja centralizada
-  const abrirCajaJornada = async () => {
-    if (!usuario) return;
-    const baseNum = parseFloat(baseEfectivoInput) || 0;
-
-    const { data, error } = await supabase.from('jornadas').insert([
-      { user_id: usuario.id, base_inicial: baseNum, estado: 'abierta' }
-    ]).select().single();
-
-    if (error) {
-      alert('Error al abrir caja: ' + error.message);
-    } else if (data) {
-      setCajaAbierta(true);
-      setBaseEfectivoJornada(baseNum);
-      setJornadaId(data.id);
-      alert(`Caja abierta con base de $${baseNum.toLocaleString()}`);
-    }
-  };
 
   const seleccionarMesa = (m: Mesa) => {
     if (!cajaAbierta) return alert('⚠️ Debes realizar la apertura de caja primero.');
@@ -540,7 +552,6 @@ export default function Home() {
         await supabase.from('ventas').update({ cierre_id: nuevoCierreId }).in('id', idsVentasAbiertas);
       }
 
-      // Marcar jornada como cerrada en la BD
       if (jornadaId) {
         await supabase.from('jornadas').update({ estado: 'cerrada' }).eq('id', jornadaId);
       }
