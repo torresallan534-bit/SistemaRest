@@ -36,7 +36,7 @@ export default function Home() {
   const [usuario, setUsuario] = useState<any>(null);
   const [perfil, setPerfil] = useState<Perfil | null>(null);
   
-  // Campos del Registro
+  // Formulario Registro
   const [nombrePersonaInput, setNombrePersonaInput] = useState('');
   const [nombreLocalInput, setNombreLocalInput] = useState('');
   const [documentoLocalInput, setDocumentoLocalInput] = useState('');
@@ -62,7 +62,7 @@ export default function Home() {
   const [mesas, setMesas] = useState<Mesa[]>([]);
   const [cierres, setCierres] = useState<CierreCaja[]>([]);
 
-  // Control Arqueo
+  // Control Arqueo con PERSISTENCIA EN LOCALSTORAGE
   const [cajaAbierta, setCajaAbierta] = useState<boolean>(false);
   const [baseEfectivoInput, setBaseEfectivoInput] = useState<string>('');
   const [baseEfectivoJornada, setBaseEfectivoJornada] = useState<number>(0);
@@ -119,6 +119,16 @@ export default function Home() {
     verificarSesion();
   }, []);
 
+  // Cargar estado de apertura de caja de localStorage al iniciar
+  useEffect(() => {
+    const cajaGuardada = localStorage.getItem('resto_caja_abierta');
+    const baseGuardada = localStorage.getItem('resto_base_jornada');
+    if (cajaGuardada === 'true' && baseGuardada) {
+      setCajaAbierta(true);
+      setBaseEfectivoJornada(parseFloat(baseGuardada) || 0);
+    }
+  }, []);
+
   const verificarSesion = async () => {
     setCargandoAuth(true);
     const { data } = await supabase.auth.getSession();
@@ -133,20 +143,22 @@ export default function Home() {
   };
 
   const cargarPerfil = async (userId: string) => {
-    const { data } = await supabase.from('perfiles').select('*').eq('id', userId).maybeSingle();
+    const { data, error } = await supabase.from('perfiles').select('*').eq('id', userId).maybeSingle();
+    
     if (data) {
       setPerfil(data as Perfil);
     } else {
-      const perfilNuevo: Perfil = {
+      // Si la cuenta existía pero no tenía perfil guardado, se inicializa uno por defecto para evitar N/A
+      const perfilRescatado: Perfil = {
         id: userId,
-        nombre_persona: 'Propietario',
-        nombre_local: 'Mi Negocio',
-        documento: 'N/A',
-        telefono: 'N/A',
-        direccion: 'N/A',
+        nombre_persona: 'Administrador',
+        nombre_local: 'Mi Restaurante',
+        documento: 'NIT / CC Pendiente',
+        telefono: 'Sin Registro',
+        direccion: 'Sin Registro',
       };
-      await supabase.from('perfiles').upsert(perfilNuevo);
-      setPerfil(perfilNuevo);
+      await supabase.from('perfiles').upsert([perfilRescatado]);
+      setPerfil(perfilRescatado);
     }
   };
 
@@ -167,7 +179,7 @@ export default function Home() {
       if (error) {
         alert('Error en registro: ' + error.message);
       } else if (data.user) {
-        const perfilObj = {
+        const perfilObj: Perfil = {
           id: data.user.id,
           nombre_persona: nombrePersonaInput,
           nombre_local: nombreLocalInput,
@@ -175,7 +187,12 @@ export default function Home() {
           direccion: direccionLocalInput,
           telefono: telefonoLocalInput,
         };
-        await supabase.from('perfiles').upsert([perfilObj]);
+
+        const { error: errorPerfil } = await supabase.from('perfiles').upsert([perfilObj]);
+        if (errorPerfil) {
+          console.error('Error al guardar perfil:', errorPerfil);
+        }
+
         setPerfil(perfilObj);
         setUsuario(data.user);
         await cargarTodo(data.user.id);
@@ -198,6 +215,9 @@ export default function Home() {
 
   const cerrarSesion = async () => {
     await supabase.auth.signOut();
+    localStorage.removeItem('resto_caja_abierta');
+    localStorage.removeItem('resto_base_jornada');
+    setCajaAbierta(false);
     setUsuario(null);
     setPerfil(null);
   };
@@ -272,10 +292,13 @@ export default function Home() {
   const difTarjeta = tarjetaReal !== '' ? (parseFloat(tarjetaReal) || 0) - totalTarjetaHoy : null;
   const difTransferencia = transferenciaReal !== '' ? (parseFloat(transferenciaReal) || 0) - totalTransferenciaHoy : null;
 
+  // Apertura de caja persistente
   const abrirCajaJornada = () => {
     const baseNum = parseFloat(baseEfectivoInput) || 0;
     setBaseEfectivoJornada(baseNum);
     setCajaAbierta(true);
+    localStorage.setItem('resto_caja_abierta', 'true');
+    localStorage.setItem('resto_base_jornada', baseNum.toString());
     alert(`Caja abierta con base de $${baseNum.toLocaleString()}`);
   };
 
@@ -303,7 +326,6 @@ export default function Home() {
     if (usuario) obtenerMesas(usuario.id);
   };
 
-  // Guardar Comanda y Generar Ticket para Cocina
   const guardarPedidoMesa = async () => {
     if (!mesaSeleccionada || !usuario) return;
 
@@ -319,7 +341,6 @@ export default function Home() {
       comentarios: comentarioMesa
     }).eq('id', mesaSeleccionada.id);
 
-    // Armar items para cocina
     const itemsCocina = productosValidos.map((item) => {
       const prod = productos.find((p) => p.id === item.productoId);
       return {
@@ -402,7 +423,6 @@ export default function Home() {
     if (error) {
       alert('Error al registrar la venta: ' + error.message);
     } else if (ventaGuardada && ventaGuardada[0]) {
-      // Liberar mesa por completo
       await supabase.from('mesas').update({ 
         pedidos: [], 
         estado: 'libre',
@@ -457,6 +477,8 @@ export default function Home() {
       }
 
       alert('🔒 Cierre completado.');
+      localStorage.removeItem('resto_caja_abierta');
+      localStorage.removeItem('resto_base_jornada');
       setCajaAbierta(false);
       setBaseEfectivoJornada(0);
       setBaseEfectivoInput('');
@@ -805,7 +827,6 @@ export default function Home() {
                       ＋ Agregar Producto
                     </button>
 
-                    {/* Observaciones / Comentarios del Pedido */}
                     <div style={{ marginTop: '12px' }}>
                       <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>
                         📝 Observaciones para Cocina:
@@ -1215,7 +1236,7 @@ export default function Home() {
             <div className={styles.columnaPreviewFactura}>
               <div style={{ textAlign: 'center', borderBottom: '2px dashed #cbd5e1', paddingBottom: '8px', marginBottom: '8px' }}>
                 <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>{perfil?.nombre_local || 'Mi Negocio'}</h3>
-                <p style={{ margin: '2px 0', fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>Propietario: {perfil?.nombre_persona || 'Propietario'}</p>
+                <p style={{ margin: '2px 0', fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>Propietario: {perfil?.nombre_persona || 'Administrador'}</p>
                 <p style={{ margin: '2px 0', fontSize: '12px', color: '#475569' }}>NIT / CC: {perfil?.documento || 'N/A'}</p>
                 <p style={{ margin: '2px 0', fontSize: '12px', color: '#475569' }}>Dir: {perfil?.direccion || 'N/A'} | Tel: {perfil?.telefono || 'N/A'}</p>
               </div>
@@ -1320,7 +1341,7 @@ export default function Home() {
             <div className={styles.ticketImpresionArea}>
               <div style={{ textAlign: 'center', borderBottom: '2px dashed #0f172a', paddingBottom: '8px', marginBottom: '8px' }}>
                 <h2 style={{ margin: 0, fontSize: '20px' }}>{perfil?.nombre_local || 'Mi Negocio'}</h2>
-                <p style={{ margin: '2px 0', fontSize: '12px', fontWeight: 'bold' }}>Propietario: {perfil?.nombre_persona || 'Propietario'}</p>
+                <p style={{ margin: '2px 0', fontSize: '12px', fontWeight: 'bold' }}>Propietario: {perfil?.nombre_persona || 'Administrador'}</p>
                 <p style={{ margin: '2px 0', fontSize: '12px' }}>NIT / CC: {perfil?.documento || 'N/A'}</p>
                 <p style={{ margin: '2px 0', fontSize: '12px' }}>Dir: {perfil?.direccion || 'N/A'} | Tel: {perfil?.telefono || 'N/A'}</p>
                 <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#64748b' }}>{formatearFecha((ventaConfirmadaTicket || ventaSeleccionada)!.created_at)}</p>
