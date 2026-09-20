@@ -62,7 +62,7 @@ export default function Home() {
   const [mesas, setMesas] = useState<Mesa[]>([]);
   const [cierres, setCierres] = useState<CierreCaja[]>([]);
 
-  // Control Arqueo con PERSISTENCIA EN LOCALSTORAGE
+  // Control Arqueo
   const [cajaAbierta, setCajaAbierta] = useState<boolean>(false);
   const [baseEfectivoInput, setBaseEfectivoInput] = useState<string>('');
   const [baseEfectivoJornada, setBaseEfectivoJornada] = useState<number>(0);
@@ -115,11 +115,40 @@ export default function Home() {
   const [ventaSeleccionada, setVentaSeleccionada] = useState<Venta | null>(null);
   const [cierreFiltroSeleccionado, setCierreFiltroSeleccionado] = useState<string>('abierta');
 
+  // EFECTO PRINCIPAL: Mantener sesión activa y responder a refrescos (F5)
   useEffect(() => {
-    verificarSesion();
+    const inicializarSesion = async () => {
+      setCargandoAuth(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.user) {
+        setUsuario(session.user);
+        await cargarPerfil(session.user.id);
+        await cargarTodo(session.user.id);
+      } else {
+        setUsuario(null);
+      }
+      setCargandoAuth(false);
+    };
+
+    inicializarSesion();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        setUsuario(session.user);
+        await cargarPerfil(session.user.id);
+        await cargarTodo(session.user.id);
+      } else {
+        setUsuario(null);
+        setPerfil(null);
+      }
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
   }, []);
 
-  // Cargar estado de apertura de caja de localStorage al iniciar
   useEffect(() => {
     const cajaGuardada = localStorage.getItem('resto_caja_abierta');
     const baseGuardada = localStorage.getItem('resto_base_jornada');
@@ -129,36 +158,10 @@ export default function Home() {
     }
   }, []);
 
-  const verificarSesion = async () => {
-    setCargandoAuth(true);
-    const { data } = await supabase.auth.getSession();
-    if (data.session) {
-      setUsuario(data.session.user);
-      await cargarPerfil(data.session.user.id);
-      await cargarTodo(data.session.user.id);
-    } else {
-      setUsuario(null);
-    }
-    setCargandoAuth(false);
-  };
-
   const cargarPerfil = async (userId: string) => {
-    const { data, error } = await supabase.from('perfiles').select('*').eq('id', userId).maybeSingle();
-    
+    const { data } = await supabase.from('perfiles').select('*').eq('id', userId).maybeSingle();
     if (data) {
       setPerfil(data as Perfil);
-    } else {
-      // Si la cuenta existía pero no tenía perfil guardado, se inicializa uno por defecto para evitar N/A
-      const perfilRescatado: Perfil = {
-        id: userId,
-        nombre_persona: 'Administrador',
-        nombre_local: 'Mi Restaurante',
-        documento: 'NIT / CC Pendiente',
-        telefono: 'Sin Registro',
-        direccion: 'Sin Registro',
-      };
-      await supabase.from('perfiles').upsert([perfilRescatado]);
-      setPerfil(perfilRescatado);
     }
   };
 
@@ -188,14 +191,22 @@ export default function Home() {
           telefono: telefonoLocalInput,
         };
 
-        const { error: errorPerfil } = await supabase.from('perfiles').upsert([perfilObj]);
-        if (errorPerfil) {
-          console.error('Error al guardar perfil:', errorPerfil);
-        }
-
+        await supabase.from('perfiles').upsert([perfilObj]);
         setPerfil(perfilObj);
         setUsuario(data.user);
+
+        // Generar 5 mesas iniciales garantizadas para el usuario recién registrado
+        const mesasIniciales = [
+          { nombre: 'Mesa 1', user_id: data.user.id, estado: 'libre' },
+          { nombre: 'Mesa 2', user_id: data.user.id, estado: 'libre' },
+          { nombre: 'Mesa 3', user_id: data.user.id, estado: 'libre' },
+          { nombre: 'Mesa 4', user_id: data.user.id, estado: 'libre' },
+          { nombre: 'Mesa 5', user_id: data.user.id, estado: 'libre' },
+        ];
+        await supabase.from('mesas').insert(mesasIniciales);
+
         await cargarTodo(data.user.id);
+        alert('¡Registro exitoso! Tu negocio ha sido creado con 5 mesas por defecto.');
       }
     } else {
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -261,11 +272,11 @@ export default function Home() {
     
     if (data && data.length === 0) {
       const mesasIniciales = [
-        { nombre: 'Mesa 1', user_id: uId },
-        { nombre: 'Mesa 2', user_id: uId },
-        { nombre: 'Mesa 3', user_id: uId },
-        { nombre: 'Mesa 4', user_id: uId },
-        { nombre: 'Mesa 5', user_id: uId },
+        { nombre: 'Mesa 1', user_id: uId, estado: 'libre' },
+        { nombre: 'Mesa 2', user_id: uId, estado: 'libre' },
+        { nombre: 'Mesa 3', user_id: uId, estado: 'libre' },
+        { nombre: 'Mesa 4', user_id: uId, estado: 'libre' },
+        { nombre: 'Mesa 5', user_id: uId, estado: 'libre' },
       ];
       await supabase.from('mesas').insert(mesasIniciales);
       const { data: dataCreadas } = await supabase.from('mesas').select('*').eq('user_id', uId).order('nombre', { ascending: true });
@@ -292,7 +303,6 @@ export default function Home() {
   const difTarjeta = tarjetaReal !== '' ? (parseFloat(tarjetaReal) || 0) - totalTarjetaHoy : null;
   const difTransferencia = transferenciaReal !== '' ? (parseFloat(transferenciaReal) || 0) - totalTransferenciaHoy : null;
 
-  // Apertura de caja persistente
   const abrirCajaJornada = () => {
     const baseNum = parseFloat(baseEfectivoInput) || 0;
     setBaseEfectivoJornada(baseNum);
@@ -314,7 +324,7 @@ export default function Home() {
   const agregarMesa = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nuevoNombreMesa.trim() || !usuario) return;
-    await supabase.from('mesas').insert([{ nombre: nuevoNombreMesa, user_id: usuario.id }]);
+    await supabase.from('mesas').insert([{ nombre: nuevoNombreMesa, user_id: usuario.id, estado: 'libre' }]);
     setNuevoNombreMesa('');
     obtenerMesas(usuario.id);
   };
