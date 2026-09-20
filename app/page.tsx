@@ -62,10 +62,11 @@ export default function Home() {
   const [mesas, setMesas] = useState<Mesa[]>([]);
   const [cierres, setCierres] = useState<CierreCaja[]>([]);
 
-  // Control Arqueo
+  // Control Arqueo y Jornada
   const [cajaAbierta, setCajaAbierta] = useState<boolean>(false);
   const [baseEfectivoInput, setBaseEfectivoInput] = useState<string>('');
   const [baseEfectivoJornada, setBaseEfectivoJornada] = useState<number>(0);
+  const [jornadaId, setJornadaId] = useState<string | null>(null);
 
   // Mesa activa y Comanda
   const [mesaSeleccionada, setMesaSeleccionada] = useState<Mesa | null>(null);
@@ -115,7 +116,7 @@ export default function Home() {
   const [ventaSeleccionada, setVentaSeleccionada] = useState<Venta | null>(null);
   const [cierreFiltroSeleccionado, setCierreFiltroSeleccionado] = useState<string>('abierta');
 
-  // EFECTO PRINCIPAL: Mantener sesión activa y responder a refrescos (F5)
+  // Inicialización de Sesión
   useEffect(() => {
     const inicializarSesion = async () => {
       setCargandoAuth(true);
@@ -149,20 +150,37 @@ export default function Home() {
     };
   }, []);
 
+  // CANAL EN TIEMPO REAL: Sincronización instantánea entre dispositivos
   useEffect(() => {
-    const cajaGuardada = localStorage.getItem('resto_caja_abierta');
-    const baseGuardada = localStorage.getItem('resto_base_jornada');
-    if (cajaGuardada === 'true' && baseGuardada) {
-      setCajaAbierta(true);
-      setBaseEfectivoJornada(parseFloat(baseGuardada) || 0);
-    }
-  }, []);
+    if (!usuario?.id) return;
+
+    const canalSincronizacion = supabase
+      .channel('sincronizacion-restopos')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'mesas', filter: `user_id=eq.${usuario.id}` },
+        () => obtenerMesas(usuario.id)
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'ventas', filter: `user_id=eq.${usuario.id}` },
+        () => obtenerVentas(usuario.id)
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'jornadas', filter: `user_id=eq.${usuario.id}` },
+        () => obtenerJornadaActiva(usuario.id)
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(canalSincronizacion);
+    };
+  }, [usuario?.id]);
 
   const cargarPerfil = async (userId: string) => {
     const { data } = await supabase.from('perfiles').select('*').eq('id', userId).maybeSingle();
-    if (data) {
-      setPerfil(data as Perfil);
-    }
+    if (data) setPerfil(data as Perfil);
   };
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -195,7 +213,7 @@ export default function Home() {
         setPerfil(perfilObj);
         setUsuario(data.user);
 
-        // Generar 5 mesas iniciales garantizadas para el usuario recién registrado
+        // Generar 5 mesas iniciales por defecto
         const mesasIniciales = [
           { nombre: 'Mesa 1', user_id: data.user.id, estado: 'libre' },
           { nombre: 'Mesa 2', user_id: data.user.id, estado: 'libre' },
@@ -209,7 +227,7 @@ export default function Home() {
         alert('¡Registro exitoso! Tu negocio ha sido creado con 5 mesas por defecto.');
       }
     } else {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.signInWithPassword({
         email: emailInput,
         password: passwordInput,
       });
@@ -226,9 +244,6 @@ export default function Home() {
 
   const cerrarSesion = async () => {
     await supabase.auth.signOut();
-    localStorage.removeItem('resto_caja_abierta');
-    localStorage.removeItem('resto_base_jornada');
-    setCajaAbierta(false);
     setUsuario(null);
     setPerfil(null);
   };
@@ -238,6 +253,7 @@ export default function Home() {
     if (!uId) return;
 
     await Promise.all([
+      obtenerJornadaActiva(uId),
       obtenerProductos(uId),
       obtenerInsumos(uId),
       obtenerRecetas(uId),
@@ -245,6 +261,27 @@ export default function Home() {
       obtenerMesas(uId),
       obtenerCierres(uId),
     ]);
+  };
+
+  // Cargar estado de la caja directamente desde la Base de Datos
+  const obtenerJornadaActiva = async (uId: string) => {
+    const { data } = await supabase
+      .from('jornadas')
+      .select('*')
+      .eq('user_id', uId)
+      .eq('estado', 'abierta')
+      .order('created_at', { ascending: false })
+      .maybeSingle();
+
+    if (data) {
+      setCajaAbierta(true);
+      setBaseEfectivoJornada(data.base_inicial || 0);
+      setJornadaId(data.id);
+    } else {
+      setCajaAbierta(false);
+      setBaseEfectivoJornada(0);
+      setJornadaId(null);
+    }
   };
 
   const obtenerProductos = async (uId: string) => {
@@ -303,13 +340,23 @@ export default function Home() {
   const difTarjeta = tarjetaReal !== '' ? (parseFloat(tarjetaReal) || 0) - totalTarjetaHoy : null;
   const difTransferencia = transferenciaReal !== '' ? (parseFloat(transferenciaReal) || 0) - totalTransferenciaHoy : null;
 
-  const abrirCajaJornada = () => {
+  // Apertura de Caja Centralizada en la Base de Datos
+  const abrirCajaJornada = async () => {
+    if (!usuario) return;
     const baseNum = parseFloat(baseEfectivoInput) || 0;
-    setBaseEfectivoJornada(baseNum);
-    setCajaAbierta(true);
-    localStorage.setItem('resto_caja_abierta', 'true');
-    localStorage.setItem('resto_base_jornada', baseNum.toString());
-    alert(`Caja abierta con base de $${baseNum.toLocaleString()}`);
+
+    const { data, error } = await supabase.from('jornadas').insert([
+      { user_id: usuario.id, base_inicial: baseNum, estado: 'abierta' }
+    ]).select().single();
+
+    if (error) {
+      alert('Error al abrir caja: ' + error.message);
+    } else if (data) {
+      setCajaAbierta(true);
+      setBaseEfectivoJornada(baseNum);
+      setJornadaId(data.id);
+      alert(`Caja abierta en todos los dispositivos con base de $${baseNum.toLocaleString()}`);
+    }
   };
 
   const seleccionarMesa = (m: Mesa) => {
@@ -452,9 +499,10 @@ export default function Home() {
     }
   };
 
+  // Cierre de caja global
   const realizarCierreCaja = async () => {
     if (!usuario) return;
-    if (!confirm('¿Seguro de realizar el cierre de caja? Esto finalizará la jornada laboral.')) return;
+    if (!confirm('¿Seguro de realizar el cierre de caja? Esto finalizará la jornada en todos los dispositivos.')) return;
 
     const efReal = parseFloat(efectivoReal) || 0;
     const tarReal = parseFloat(tarjetaReal) || 0;
@@ -486,9 +534,12 @@ export default function Home() {
         await supabase.from('ventas').update({ cierre_id: nuevoCierreId }).in('id', idsVentasAbiertas);
       }
 
+      // Cerrar la jornada en la Base de Datos
+      if (jornadaId) {
+        await supabase.from('jornadas').update({ estado: 'cerrada' }).eq('id', jornadaId);
+      }
+
       alert('🔒 Cierre completado.');
-      localStorage.removeItem('resto_caja_abierta');
-      localStorage.removeItem('resto_base_jornada');
       setCajaAbierta(false);
       setBaseEfectivoJornada(0);
       setBaseEfectivoInput('');
