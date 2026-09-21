@@ -18,7 +18,7 @@ interface Insumo { id: string; nombre: string; unidad: string; stock_actual: num
 interface RecetaItem { id: string; producto_id: string; insumo_id: string; cantidad_requerida: number; user_id?: string; }
 interface LineaFactura { id: number; productoId: string; cantidad: number; }
 interface ProductoVenta { nombre: string; cantidad: number; precioUnitario: number; subtotal: number; }
-interface Venta { id: number; created_at: string; cliente: string; documento: string; metodo_pago: string; total: number; productos: ProductoVenta[]; cierre_id?: string; user_id?: string; }
+interface Venta { id: number; created_at: string; cliente: string; documento: string; metodo_pago: string; total: number; productos: ProductoVenta[]; cierre_id?: string; user_id?: string; jornada_id?: string; }
 interface Mesa { 
   id: string; 
   nombre: string; 
@@ -219,7 +219,7 @@ export default function Home() {
         setPerfil(perfilObj);
         setUsuario(data.user);
 
-        // Crear 5 mesas iniciales
+        // Crear 5 mesas iniciales por defecto
         const mesasIniciales = [
           { nombre: 'Mesa 1', user_id: data.user.id, estado: 'libre' },
           { nombre: 'Mesa 2', user_id: data.user.id, estado: 'libre' },
@@ -366,7 +366,11 @@ export default function Home() {
     if (data) setCierres(data as CierreCaja[]);
   };
 
-  const ventasJornadaActual = ventas.filter((v) => !v.cierre_id);
+  // VINCULACIÓN ESTRICTA: Filtrar ÚNICAMENTE las ventas asociadas a la jornada/turno actual
+  const ventasJornadaActual = ventas.filter(
+    (v) => v.jornada_id === jornadaId && !v.cierre_id
+  );
+
   const totalHoy = ventasJornadaActual.reduce((acc, v) => acc + (v.total || 0), 0);
   const totalEfectivoHoy = ventasJornadaActual.filter((v) => (v.metodo_pago || 'Efectivo') === 'Efectivo').reduce((acc, v) => acc + (v.total || 0), 0);
   const totalTarjetaHoy = ventasJornadaActual.filter((v) => v.metodo_pago === 'Tarjeta').reduce((acc, v) => acc + (v.total || 0), 0);
@@ -492,6 +496,7 @@ export default function Home() {
       productos: productosDetalle,
       total: totalCalculado,
       user_id: usuario.id,
+      jornada_id: jornadaId, // 👈 Se guarda asociado explícitamente a la jornada activa
     };
 
     const { data: ventaGuardada, error } = await supabase.from('ventas').insert([nuevaVenta]).select();
@@ -518,9 +523,10 @@ export default function Home() {
     }
   };
 
+  // CIERRE DE CAJA DEFINITIVO
   const realizarCierreCaja = async () => {
-    if (!usuario) return;
-    if (!confirm('¿Seguro de realizar el cierre de caja? Esto finalizará la jornada en todos los dispositivos.')) return;
+    if (!usuario || !jornadaId) return alert('No hay una jornada activa para cerrar');
+    if (!confirm('¿Seguro de realizar el cierre de caja? Esto finalizará la jornada actual.')) return;
 
     const efReal = parseFloat(efectivoReal) || 0;
     const tarReal = parseFloat(tarjetaReal) || 0;
@@ -547,21 +553,31 @@ export default function Home() {
       alert('Error en el cierre: ' + error.message);
     } else if (cierreGuardado && cierreGuardado[0]) {
       const nuevoCierreId = cierreGuardado[0].id;
-      const idsVentasAbiertas = ventasJornadaActual.map((v) => v.id);
-      if (idsVentasAbiertas.length > 0) {
-        await supabase.from('ventas').update({ cierre_id: nuevoCierreId }).in('id', idsVentasAbiertas);
-      }
 
-      if (jornadaId) {
-        await supabase.from('jornadas').update({ estado: 'cerrada' }).eq('id', jornadaId);
-      }
+      // 1. Vincular todas las ventas de la jornada actual a este cierre
+      await supabase
+        .from('ventas')
+        .update({ cierre_id: nuevoCierreId })
+        .eq('jornada_id', jornadaId);
 
-      alert('🔒 Cierre completado.');
+      // 2. Marcar la jornada como cerrada en Supabase
+      await supabase
+        .from('jornadas')
+        .update({ estado: 'cerrada' })
+        .eq('id', jornadaId);
+
+      alert('🔒 Cierre completado. La jornada ha sido finalizada con éxito.');
+
+      // 3. Limpieza completa del estado de caja local
       setCajaAbierta(false);
       setBaseEfectivoJornada(0);
+      setJornadaId(null);
       setBaseEfectivoInput('');
-      setEfectivoReal(''); setTarjetaReal(''); setTransferenciaReal('');
+      setEfectivoReal('');
+      setTarjetaReal('');
+      setTransferenciaReal('');
       setMesaSeleccionada(null);
+
       await cargarTodo(usuario.id);
     }
   };
@@ -654,7 +670,7 @@ export default function Home() {
   const cambioEfectivo = pagaConValor - totalCalculadoMesa;
 
   const ventasFiltradasHistorial = cierreFiltroSeleccionado === 'abierta'
-    ? ventas.filter((v) => !v.cierre_id)
+    ? ventas.filter((v) => v.jornada_id === jornadaId && !v.cierre_id)
     : ventas.filter((v) => v.cierre_id === cierreFiltroSeleccionado);
 
   if (cargandoAuth) {
