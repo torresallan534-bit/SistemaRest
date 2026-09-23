@@ -495,7 +495,7 @@ export default function Home() {
       productos: productosDetalle,
       total: totalCalculado,
       user_id: usuario.id,
-      jornada_id: jornadaId, // 👈 Asociada al id del turno activo
+      jornada_id: jornadaId,
     };
 
     const { data: ventaGuardada, error } = await supabase.from('ventas').insert([nuevaVenta]).select();
@@ -668,7 +668,9 @@ export default function Home() {
   const pagaConValor = parseFloat(montoPagaCon) || 0;
   const cambioEfectivo = pagaConValor - totalCalculadoMesa;
 
-  // HISTORIAL DE VENTAS: Se puede consultar filtrando únicamente por cada Arqueo/Cierre guardado
+  // Lógica de filtrado dinámico para el Historial de Ventas por Arqueo/Turno
+  const arqueoSeleccionado = cierres.find((c) => c.id === cierreFiltroSeleccionado);
+
   const ventasFiltradasHistorial = cierreFiltroSeleccionado === 'abierta'
     ? ventas.filter((v) => v.jornada_id === jornadaId && !v.cierre_id)
     : ventas.filter((v) => v.cierre_id === cierreFiltroSeleccionado);
@@ -1037,16 +1039,44 @@ export default function Home() {
               {subPestanaHistorial === 'ventas' ? (
                 <div>
                   <div style={{ margin: '16px 0', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                    <label style={{ fontWeight: 'bold' }}>Seleccionar Arqueo / Turno:</label>
-                    <select className={styles.selectChico} style={{ maxWidth: '380px', width: '100%' }} value={cierreFiltroSeleccionado} onChange={(e) => setCierreFiltroSeleccionado(e.target.value)}>
+                    <label style={{ fontWeight: 'bold' }}>Seleccionar Arqueo / Turno para ver detalle:</label>
+                    <select 
+                      className={styles.selectChico} 
+                      style={{ maxWidth: '420px', width: '100%' }} 
+                      value={cierreFiltroSeleccionado} 
+                      onChange={(e) => setCierreFiltroSeleccionado(e.target.value)}
+                    >
                       <option value="abierta">🟢 Turno Activo (En servicio)</option>
                       {cierres.map((c) => (
                         <option key={c.id} value={c.id}>
-                          🔒 Arqueo del {formatearFecha(c.fecha)} (${c.total_sistema.toLocaleString()})
+                          🔒 Arqueo del {formatearFecha(c.fecha)} — Total: ${c.total_sistema.toLocaleString()}
                         </option>
                       ))}
                     </select>
                   </div>
+
+                  {/* Resumen dinámico al consultar un arqueo guardado */}
+                  {cierreFiltroSeleccionado !== 'abierta' && arqueoSeleccionado && (
+                    <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1', marginBottom: '20px' }}>
+                      <h4 style={{ margin: '0 0 10px', color: '#0f172a' }}>
+                        📊 Resumen del Arqueo — {formatearFecha(arqueoSeleccionado.fecha)}
+                      </h4>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', fontSize: '13px' }}>
+                        <div><span>Base Inicial:</span><br/><strong>${(arqueoSeleccionado.base_inicial || 0).toLocaleString()}</strong></div>
+                        <div><span>Total Ventas:</span><br/><strong style={{ color: '#2563eb' }}>${arqueoSeleccionado.total_sistema.toLocaleString()}</strong></div>
+                        <div><span>Efectivo:</span><br/><strong>${arqueoSeleccionado.efectivo_sistema.toLocaleString()}</strong></div>
+                        <div><span>Tarjeta:</span><br/><strong>${arqueoSeleccionado.tarjeta_sistema.toLocaleString()}</strong></div>
+                        <div><span>Transferencia:</span><br/><strong>${arqueoSeleccionado.transferencia_sistema.toLocaleString()}</strong></div>
+                        <div><span>Diferencia Cierre:</span><br/>
+                          <strong style={{ color: (arqueoSeleccionado.diferencia_efectivo + arqueoSeleccionado.diferencia_tarjeta + arqueoSeleccionado.diferencia_transferencia) < 0 ? '#dc2626' : '#16a34a' }}>
+                            ${(arqueoSeleccionado.diferencia_efectivo + arqueoSeleccionado.diferencia_tarjeta + arqueoSeleccionado.diferencia_transferencia).toLocaleString()}
+                          </strong>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <h4>Ventas registradas en este arqueo ({ventasFiltradasHistorial.length})</h4>
 
                   <div className={styles.tablaResponsiveContainer}>
                     <table className={styles.tablaApp}>
@@ -1055,7 +1085,11 @@ export default function Home() {
                       </thead>
                       <tbody>
                         {ventasFiltradasHistorial.length === 0 ? (
-                          <tr><td colSpan={5} style={{ textAlign: 'center', color: '#94a3b8' }}>No hay ventas registradas en este arqueo.</td></tr>
+                          <tr>
+                            <td colSpan={5} style={{ textAlign: 'center', color: '#94a3b8', padding: '20px' }}>
+                              No se encontraron ventas asociadas a este arqueo seleccionado.
+                            </td>
+                          </tr>
                         ) : (
                           ventasFiltradasHistorial.map((v) => (
                             <tr key={v.id}>
@@ -1064,7 +1098,7 @@ export default function Home() {
                               <td>{v.metodo_pago}</td>
                               <td><strong>${v.total.toLocaleString()}</strong></td>
                               <td>
-                                <button onClick={() => setVentaSeleccionada(v)} className={styles.btnVerConBorde}>👁️ Detalle</button>
+                                <button onClick={() => setVentaSeleccionada(v)} className={styles.btnVerConBorde}>👁️ Ver Ticket</button>
                                 <button onClick={() => eliminarVenta(v.id)} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>🗑️ Eliminar</button>
                               </td>
                             </tr>
