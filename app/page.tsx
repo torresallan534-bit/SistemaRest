@@ -116,6 +116,7 @@ export default function Home() {
 
   const [ventaSeleccionada, setVentaSeleccionada] = useState<Venta | null>(null);
   const [cierreFiltroSeleccionado, setCierreFiltroSeleccionado] = useState<string>('abierta');
+  const [menuUsuarioAbierto, setMenuUsuarioAbierto] = useState(false);
 
   const cargarPerfil = async (userId: string) => {
     const { data } = await supabase.from('perfiles').select('*').eq('id', userId).maybeSingle();
@@ -269,6 +270,7 @@ export default function Home() {
     await supabase.auth.signOut();
     setUsuario(null);
     setPerfil(null);
+    setMenuUsuarioAbierto(false);
   };
 
   // Obtener la jornada abierta
@@ -820,9 +822,46 @@ export default function Home() {
           <button className={`${styles.btnModulo} ${modulo === 'produccion' ? styles.activeModulo : ''}`} onClick={() => setModulo('produccion')}>
             📦 Producción y Costes
           </button>
-          <button onClick={cerrarSesion} className={styles.btnEliminarConBorde} style={{ marginLeft: '12px' }}>
-            🚪 Salir ({usuario.email?.split('@')[0]})
-          </button>
+          <div className={styles.menuUsuario}>
+            <button
+              type="button"
+              className={styles.btnUsuario}
+              onClick={() => setMenuUsuarioAbierto(!menuUsuarioAbierto)}
+              aria-expanded={menuUsuarioAbierto}
+              aria-haspopup="menu"
+            >
+              <span className={styles.avatarUsuario}>
+                {(perfil?.nombre_persona || usuario.email || 'U').charAt(0).toUpperCase()}
+              </span>
+              <span className={styles.identidadUsuario}>
+                <strong>{perfil?.nombre_persona || 'Usuario'}</strong>
+                <small>{usuario.email}</small>
+              </span>
+              <span className={styles.chevronUsuario}>{menuUsuarioAbierto ? '⌃' : '⌄'}</span>
+            </button>
+
+            {menuUsuarioAbierto && (
+              <div className={styles.dropdownUsuario} role="menu">
+                <div className={styles.encabezadoDropdown}>
+                  <span className={styles.avatarGrande}>
+                    {(perfil?.nombre_persona || usuario.email || 'U').charAt(0).toUpperCase()}
+                  </span>
+                  <div>
+                    <strong>{perfil?.nombre_persona || 'Usuario'}</strong>
+                    <span>{usuario.email}</span>
+                  </div>
+                </div>
+                <div className={styles.detallePerfil}>
+                  <div><span>Negocio</span><strong>{perfil?.nombre_local || 'RestoPOS Pro'}</strong></div>
+                  {perfil?.telefono && <div><span>Teléfono</span><strong>{perfil.telefono}</strong></div>}
+                  {perfil?.direccion && <div><span>Dirección</span><strong>{perfil.direccion}</strong></div>}
+                </div>
+                <button type="button" className={styles.btnCerrarSesion} onClick={cerrarSesion} role="menuitem">
+                  <span>↪</span> Cerrar sesión
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </nav>
 

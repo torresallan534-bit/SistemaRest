@@ -56,6 +56,169 @@
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
+.menuUsuario {
+  position: relative;
+  margin-left: 8px;
+}
+
+.btnUsuario {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 190px;
+  padding: 6px 10px 6px 7px;
+  color: white;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  border-radius: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.btnUsuario:hover,
+.btnUsuario[aria-expanded='true'] {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(147, 197, 253, 0.8);
+}
+
+.avatarUsuario,
+.avatarGrande {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  color: #1d4ed8;
+  background: #dbeafe;
+  font-weight: 800;
+}
+
+.avatarUsuario {
+  width: 32px;
+  height: 32px;
+  font-size: 14px;
+}
+
+.identidadUsuario {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.identidadUsuario strong,
+.identidadUsuario small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.identidadUsuario strong {
+  font-size: 13px;
+}
+
+.identidadUsuario small {
+  color: #cbd5e1;
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.chevronUsuario {
+  color: #bfdbfe;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.dropdownUsuario {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 120;
+  width: 290px;
+  padding: 14px;
+  color: #0f172a;
+  background: white;
+  border: 1px solid #dbe7f5;
+  border-radius: 14px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.2);
+}
+
+.encabezadoDropdown {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.avatarGrande {
+  width: 42px;
+  height: 42px;
+  font-size: 18px;
+}
+
+.encabezadoDropdown div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.encabezadoDropdown strong {
+  font-size: 14px;
+}
+
+.encabezadoDropdown span {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detallePerfil {
+  display: grid;
+  gap: 9px;
+  padding: 13px 0;
+}
+
+.detallePerfil div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.detallePerfil span {
+  color: #64748b;
+}
+
+.detallePerfil strong {
+  max-width: 170px;
+  overflow: hidden;
+  color: #334155;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.btnCerrarSesion {
+  width: 100%;
+  padding: 10px 12px;
+  color: #b91c1c;
+  background: #fff7f7;
+  border: 1px solid #fecaca;
+  border-radius: 9px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.btnCerrarSesion:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
 /* SUB-BARRAS DE NAVEGACIÓN */
 .subBarra, .subSubBarra {
   display: flex;
@@ -104,6 +267,37 @@
 @media (max-width: 1100px) {
   .layoutTresColumnas {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .barrasNavegacion {
+    padding: 12px 16px;
+  }
+
+  .botonesModulo {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .btnModulo {
+    flex: 1;
+    min-width: 145px;
+  }
+
+  .menuUsuario {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .btnUsuario {
+    width: 100%;
+  }
+
+  .dropdownUsuario {
+    right: auto;
+    left: 0;
+    width: min(290px, calc(100vw - 32px));
   }
 }
 
