@@ -1,867 +1,1107 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { supabase } from '@/lib/supabase';
-import styles from './page.module.css';
+import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabaseClient';
+import styles from './Calculadora.module.css';
 
-// ----------------------------------------------------------------------
-// INTERFACES / TIPOS
-// ----------------------------------------------------------------------
-interface RecetaIngrediente {
-  ingrediente_id: string;
-  cantidad: number;
+interface Perfil { 
+  id: string; 
+  nombre_persona: string;
+  nombre_local: string; 
+  documento: string; 
+  telefono: string; 
+  direccion: string; 
 }
 
-interface Producto {
-  id: string;
-  nombre: string;
-  categoria: string;
-  precio: number;
-  receta?: RecetaIngrediente[];
+interface Producto { id: string; nombre: string; precio: number; user_id?: string; }
+interface Insumo { id: string; nombre: string; unidad: string; stock_actual: number; user_id?: string; }
+interface RecetaItem { id: string; producto_id: string; insumo_id: string; cantidad_requerida: number; user_id?: string; }
+interface LineaFactura { id: number; productoId: string; cantidad: number; }
+interface ProductoVenta { nombre: string; cantidad: number; precioUnitario: number; subtotal: number; }
+interface Venta { id: number; created_at: string; cliente: string; documento: string; metodo_pago: string; total: number; productos: ProductoVenta[]; cierre_id?: string; user_id?: string; jornada_id?: string; }
+interface Mesa { 
+  id: string; 
+  nombre: string; 
+  estado: 'libre' | 'ocupada'; 
+  pedidos: LineaFactura[]; 
+  cliente_nombre?: string;
+  cliente_documento?: string;
+  comentarios?: string;
+  user_id?: string; 
 }
-
-interface ItemPedido {
-  producto: Producto;
-  cantidad: number;
-  notas?: string;
-  agregados?: { ingrediente_id: string; nombre: string; precio: number; cantidad: number }[];
-}
-
-interface Pedido {
-  id: string;
-  mesa: string;
-  cliente: string;
-  items: ItemPedido[];
-  total: number;
-  estado: 'Pendiente' | 'En Preparación' | 'Servido' | 'Pagado' | 'Cancelado';
-  metodo_pago?: string;
-  created_at: string;
-}
-
-interface Ingrediente {
-  id: string;
-  nombre: string;
-  unidad: string;
-  costo_unidad: number;
-  stock_actual: number;
-  minimo_alerta: number;
-}
-
-interface Venta {
-  id: string;
-  created_at: string;
-  cliente: string;
-  metodo_pago: string;
-  total: number;
-  descuento?: number;
-  propina?: number;
-  items: ItemPedido[];
-  jornada_id?: string;
-  cierre_id?: string;
-}
-
-interface CierreCaja {
-  id: string;
-  fecha: string;
-  base_inicial: number;
-  total_ventas: number;
-  efectivo_sistema: number;
-  tarjeta_sistema: number;
-  transferencia_sistema: number;
-  efectivo_real: number;
-  tarjeta_real: number;
-  transferencia_real: number;
-  diferencia_total: number;
-}
+interface CierreCaja { id: string; fecha: string; base_inicial: number; total_sistema: number; efectivo_sistema: number; tarjeta_sistema: number; transferencia_sistema: number; efectivo_real: number; tarjeta_real: number; transferencia_real: number; diferencia_efectivo: number; diferencia_tarjeta: number; diferencia_transferencia: number; user_id?: string; }
 
 export default function Home() {
-  // --------------------------------------------------------------------
-  // ESTADOS PRINCIPALES DE NAVEGACIÓN
-  // --------------------------------------------------------------------
-  const [pestanaPrincipal, setPestanaPrincipal] = useState<'ventas' | 'produccion' | 'salir'>('ventas');
-  const [subPestanaVentas, setSubPestanaVentas] = useState<'mesas' | 'caja' | 'historiales'>('mesas');
-  const [subPestanaProduccion, setSubPestanaProduccion] = useState<'cocina' | 'recetas' | 'inventario' | 'compras'>('cocina');
-  const [subPestanaHistoriales, setSubPestanaHistoriales] = useState<'ventas' | 'arqueos'>('ventas');
+  // Autenticación y Perfil
+  const [usuario, setUsuario] = useState<any>(null);
+  const [perfil, setPerfil] = useState<Perfil | null>(null);
+  
+  // Formulario Registro
+  const [nombrePersonaInput, setNombrePersonaInput] = useState('');
+  const [nombreLocalInput, setNombreLocalInput] = useState('');
+  const [documentoLocalInput, setDocumentoLocalInput] = useState('');
+  const [direccionLocalInput, setDireccionLocalInput] = useState('');
+  const [telefonoLocalInput, setTelefonoLocalInput] = useState('');
+  const [emailInput, setEmailInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  
+  const [esRegistro, setEsRegistro] = useState(false);
+  const [cargandoAuth, setCargandoAuth] = useState(true);
 
-  // --------------------------------------------------------------------
-  // ESTADOS DE DATOS (PRODUCTOS, PEDIDOS, INVENTARIO, VENTAS, JORNADA)
-  // --------------------------------------------------------------------
+  // Navegación
+  const [modulo, setModulo] = useState<'ventas' | 'produccion'>('ventas');
+  const [subPestanaVentas, setSubPestanaVentas] = useState<'mesas' | 'caja' | 'historial'>('mesas');
+  const [subPestanaProduccion, setSubPestanaProduccion] = useState<'inventario' | 'recetas' | 'productos'>('inventario');
+  const [subPestanaHistorial, setSubPestanaHistorial] = useState<'ventas' | 'cierres'>('ventas');
+
+  // Datos
   const [productos, setProductos] = useState<Producto[]>([]);
-  const [pedidos, setPedidos] = useState<Pedido[]>([]);
-  const [ingredientes, setIngredientes] = useState<Ingrediente[]>([]);
+  const [insumos, setInsumos] = useState<Insumo[]>([]);
+  const [recetas, setRecetas] = useState<RecetaItem[]>([]);
   const [ventas, setVentas] = useState<Venta[]>([]);
+  const [mesas, setMesas] = useState<Mesa[]>([]);
   const [cierres, setCierres] = useState<CierreCaja[]>([]);
 
-  // Estado de la jornada activa (Caja / Turno)
-  const [jornadaId, setJornadaId] = useState<string | null>(null);
+  // Control Arqueo / Turno
   const [cajaAbierta, setCajaAbierta] = useState<boolean>(false);
+  const [baseEfectivoInput, setBaseEfectivoInput] = useState<string>('');
   const [baseEfectivoJornada, setBaseEfectivoJornada] = useState<number>(0);
-  const [montoBaseInput, setMontoBaseInput] = useState<string>('');
+  const [jornadaId, setJornadaId] = useState<string | null>(null);
 
-  // --------------------------------------------------------------------
-  // ESTADOS DE FORMULARIOS Y SELECCIÓN
-  // --------------------------------------------------------------------
-  const [mesaSeleccionada, setMesaSeleccionada] = useState<string>('Mesa 1');
-  const [clienteNombre, setClienteNombre] = useState<string>('');
-  const [carrito, setCarrito] = useState<ItemPedido[]>([]);
-  const [categoriaActiva, setCategoriaActiva] = useState<string>('Todas');
+  // Mesa activa y Comanda
+  const [mesaSeleccionada, setMesaSeleccionada] = useState<Mesa | null>(null);
+  const [lineasMesa, setLineasMesa] = useState<LineaFactura[]>([]);
+  const [clienteNombreMesa, setClienteNombreMesa] = useState('');
+  const [clienteDocMesa, setClienteDocMesa] = useState('');
+  const [comentarioMesa, setComentarioMesa] = useState('');
 
-  // Modal de Detalle / Edición de Producto en el Pedido
-  const [productoEdicion, setProductoEdicion] = useState<Producto | null>(null);
-  const [cantidadEdicion, setCantidadEdicion] = useState<number>(1);
-  const [notasEdicion, setNotasEdicion] = useState<string>('');
-  const [agregadosEdicion, setAgregadosEdicion] = useState<{ [ingredienteId: string]: number }>({});
+  // Ticket de Comanda Cocina
+  const [numComanda, setNumComanda] = useState<number>(1);
+  const [comandaImprimir, setComandaImprimir] = useState<{
+    numero: number;
+    mesa: string;
+    hora: string;
+    cliente: string;
+    comentario: string;
+    items: { nombre: string; cantidad: number }[];
+  } | null>(null);
 
-  // Modal de Cobro / Pago
-  const [pedidoACobrar, setPedidoACobrar] = useState<Pedido | null>(null);
-  const [metodoPago, setMetodoPago] = useState<string>('Efectivo');
-  const [montoEfectivoCliente, setMontoEfectivoCliente] = useState<string>('');
-  const [descuentoMonto, setDescuentoMonto] = useState<number>(0);
-  const [propinaMonto, setPropinaMonto] = useState<number>(0);
+  // Modal Cobro y Factura
+  const [mostrarModalCobro, setMostrarModalCobro] = useState(false);
+  const [metodoPago, setMetodoPago] = useState<'Efectivo' | 'Tarjeta' | 'Transferencia'>('Efectivo');
+  const [montoPagaCon, setMontoPagaCon] = useState<string>('');
+  const [ventaConfirmadaTicket, setVentaConfirmadaTicket] = useState<Venta | null>(null);
 
-  // Arqueo / Cierre de Caja Físico
-  const [efectivoReal, setEfectivoReal] = useState<string>('');
-  const [tarjetaReal, setTarjetaReal] = useState<string>('');
-  const [transferenciaReal, setTransferenciaReal] = useState<string>('');
+  // Cierre
+  const [efectivoReal, setEfectivoReal] = useState('');
+  const [tarjetaReal, setTarjetaReal] = useState('');
+  const [transferenciaReal, setTransferenciaReal] = useState('');
 
-  // Filtros de Historiales y Vistas
-  const [cierreFiltroSeleccionado, setCierreFiltroSeleccionado] = useState<string>('abierta');
+  // Formularios Producción
+  const [prodRecetaSel, setProdRecetaSel] = useState('');
+  const [lineasReceta, setLineasReceta] = useState<{ insumo_id: string; cantidad_requerida: string }[]>([{ insumo_id: '', cantidad_requerida: '' }]);
+  const [recetaEditandoId, setRecetaEditandoId] = useState<string | null>(null);
+  const [cantEditandoVal, setCantEditandoVal] = useState('');
+
+  const [nuevoNombreMesa, setNuevoNombreMesa] = useState('');
+  const [nuevoNombre, setNuevoNombre] = useState('');
+  const [nuevoPrecio, setNuevoPrecio] = useState('');
+  const [productoEditando, setProductoEditando] = useState<Producto | null>(null);
+
+  const [nuevoInsumoNombre, setNuevoInsumoNombre] = useState('');
+  const [nuevoInsumoUnidad, setNuevoInsumoUnidad] = useState('g');
+  const [nuevoInsumoStock, setNuevoInsumoStock] = useState('');
+  const [conteosFisicos, setConteosFisicos] = useState<{ [key: string]: string }>({});
+
   const [ventaSeleccionada, setVentaSeleccionada] = useState<Venta | null>(null);
+  const [cierreFiltroSeleccionado, setCierreFiltroSeleccionado] = useState<string>('abierta');
 
-  // Referencia para impresión o tickets
-  const ticketRef = useRef<HTMLDivElement>(null);
-
-  // --------------------------------------------------------------------
-  // EFECTOS INICIALES Y CARGA DE DATOS DESDE SUPABASE
-  // --------------------------------------------------------------------
+  // Inicialización de Sesión Persistente
   useEffect(() => {
-    cargarDatos();
+    const inicializarSesion = async () => {
+      setCargandoAuth(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.user) {
+        setUsuario(session.user);
+        await cargarPerfil(session.user.id);
+        await cargarTodo(session.user.id);
+      } else {
+        setUsuario(null);
+      }
+      setCargandoAuth(false);
+    };
+
+    inicializarSesion();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        setUsuario(session.user);
+        await cargarPerfil(session.user.id);
+        await cargarTodo(session.user.id);
+      } else {
+        setUsuario(null);
+        setPerfil(null);
+      }
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
   }, []);
 
-  const cargarDatos = async () => {
-    try {
-      // 1. Cargar Productos
-      const { data: prodData } = await supabase.from('productos').select('*');
-      if (prodData) setProductos(prodData);
+  // CANAL EN TIEMPO REAL: Sincronización instantánea
+  useEffect(() => {
+    if (!usuario?.id) return;
 
-      // 2. Cargar Pedidos Activos
-      const { data: pedData } = await supabase
-        .from('pedidos')
-        .select('*')
-        .neq('estado', 'Pagado')
-        .neq('estado', 'Cancelado')
-        .order('created_at', { ascending: true });
-      if (pedData) setPedidos(pedData);
+    const canalSincronizacion = supabase
+      .channel('sincronizacion-restopos')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'mesas', filter: `user_id=eq.${usuario.id}` },
+        () => obtenerMesas(usuario.id)
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'ventas', filter: `user_id=eq.${usuario.id}` },
+        () => {
+          obtenerVentas(usuario.id);
+          obtenerJornadaActiva(usuario.id);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'jornadas', filter: `user_id=eq.${usuario.id}` },
+        async () => {
+          await obtenerJornadaActiva(usuario.id);
+          await obtenerVentas(usuario.id);
+        }
+      )
+      .subscribe();
 
-      // 3. Cargar Ingredientes / Inventario
-      const { data: ingData } = await supabase.from('ingredientes').select('*').order('nombre');
-      if (ingData) setIngredientes(ingData);
+    return () => {
+      supabase.removeChannel(canalSincronizacion);
+    };
+  }, [usuario?.id]);
 
-      // 4. Cargar Historial de Ventas
-      const { data: ventData } = await supabase.from('ventas').select('*').order('created_at', { ascending: false });
-      if (ventData) setVentas(ventData);
+  const cargarPerfil = async (userId: string) => {
+    const { data } = await supabase.from('perfiles').select('*').eq('id', userId).maybeSingle();
+    if (data) setPerfil(data as Perfil);
+  };
 
-      // 5. Cargar Cierres de Caja
-      const { data: cierresData } = await supabase.from('cierres_caja').select('*').order('fecha', { ascending: false });
-      if (cierresData) setCierres(cierresData);
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!emailInput || !passwordInput) return alert('Completa correo y contraseña');
 
-      // 6. Verificar si existe una Jornada/Caja Abierta
-      const { data: jornadaData } = await supabase
-        .from('jornadas')
-        .select('*')
-        .eq('estado', 'Abierta')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
-
-      if (jornadaData) {
-        setJornadaId(jornadaData.id);
-        setCajaAbierta(true);
-        setBaseEfectivoJornada(jornadaData.base_inicial || 0);
-      } else {
-        setJornadaId(null);
-        setCajaAbierta(false);
-        setBaseEfectivoJornada(0);
+    if (esRegistro) {
+      if (!nombrePersonaInput || !nombreLocalInput || !documentoLocalInput || !direccionLocalInput || !telefonoLocalInput) {
+        return alert('Por favor completa todos los campos del registro');
       }
-    } catch (err) {
-      console.error('Error al cargar datos desde Supabase:', err);
+
+      const { data, error } = await supabase.auth.signUp({
+        email: emailInput,
+        password: passwordInput,
+      });
+
+      if (error) {
+        alert('Error en registro: ' + error.message);
+      } else if (data.user) {
+        const perfilObj: Perfil = {
+          id: data.user.id,
+          nombre_persona: nombrePersonaInput,
+          nombre_local: nombreLocalInput,
+          documento: documentoLocalInput,
+          direccion: direccionLocalInput,
+          telefono: telefonoLocalInput,
+        };
+
+        await supabase.from('perfiles').upsert([perfilObj]);
+        setPerfil(perfilObj);
+        setUsuario(data.user);
+
+        const mesasIniciales = [
+          { nombre: 'Mesa 1', user_id: data.user.id, estado: 'libre' },
+          { nombre: 'Mesa 2', user_id: data.user.id, estado: 'libre' },
+          { nombre: 'Mesa 3', user_id: data.user.id, estado: 'libre' },
+          { nombre: 'Mesa 4', user_id: data.user.id, estado: 'libre' },
+          { nombre: 'Mesa 5', user_id: data.user.id, estado: 'libre' },
+        ];
+        await supabase.from('mesas').insert(mesasIniciales);
+
+        await cargarTodo(data.user.id);
+        alert('¡Registro exitoso! Tu negocio ha sido creado con 5 mesas por defecto.');
+      }
+    } else {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: emailInput,
+        password: passwordInput,
+      });
+
+      if (error) {
+        alert('Error de acceso: ' + error.message);
+      } else if (data.user) {
+        setUsuario(data.user);
+        await cargarPerfil(data.user.id);
+        await cargarTodo(data.user.id);
+      }
     }
   };
 
-  // --------------------------------------------------------------------
-  // MANEJO DE CAJA / JORNADAS
-  // --------------------------------------------------------------------
+  const cerrarSesion = async () => {
+    await supabase.auth.signOut();
+    setUsuario(null);
+    setPerfil(null);
+  };
+
+  const cargarTodo = async (userId?: string) => {
+    const uId = userId || usuario?.id;
+    if (!uId) return;
+
+    await Promise.all([
+      obtenerJornadaActiva(uId),
+      obtenerProductos(uId),
+      obtenerInsumos(uId),
+      obtenerRecetas(uId),
+      obtenerVentas(uId),
+      obtenerMesas(uId),
+      obtenerCierres(uId),
+    ]);
+  };
+
+  // Obtener la jornada abierta
+  const obtenerJornadaActiva = async (uId: string) => {
+    if (!uId) return;
+
+    const { data, error } = await supabase
+      .from('jornadas')
+      .select('*')
+      .eq('user_id', uId)
+      .eq('estado', 'abierta')
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (error) {
+      console.error('Error al obtener jornada:', error.message);
+      return;
+    }
+
+    if (data && data.length > 0) {
+      const jornada = data[0];
+      setCajaAbierta(true);
+      setBaseEfectivoJornada(Number(jornada.base_inicial) || 0);
+      setJornadaId(jornada.id);
+    } else {
+      setCajaAbierta(false);
+      setBaseEfectivoJornada(0);
+      setJornadaId(null);
+    }
+  };
+
+  // Abrir caja/turno
   const abrirCajaJornada = async () => {
-    const baseNum = parseFloat(montoBaseInput) || 0;
-    try {
-      const { data, error } = await supabase
-        .from('jornadas')
-        .insert([{ base_inicial: baseNum, estado: 'Abierta' }])
-        .select()
-        .single();
+    if (!usuario?.id) return alert('No hay usuario autenticado');
+    const baseNum = parseFloat(baseEfectivoInput) || 0;
 
-      if (error) throw error;
+    const { data, error } = await supabase
+      .from('jornadas')
+      .insert([
+        { user_id: usuario.id, base_inicial: baseNum, estado: 'abierta' }
+      ])
+      .select()
+      .single();
 
-      if (data) {
-        setJornadaId(data.id);
-        setCajaAbierta(true);
-        setBaseEfectivoJornada(baseNum);
-        setMontoBaseInput('');
-        alert(`🎉 ¡Caja abierta exitosamente con una base de $${baseNum.toLocaleString()}!`);
-      }
-    } catch (err) {
-      console.error('Error al abrir la caja:', err);
-      alert('Ocurrió un error al abrir la caja en Supabase.');
+    if (error) {
+      alert('Error de Supabase al abrir turno: ' + error.message);
+    } else if (data) {
+      setCajaAbierta(true);
+      setBaseEfectivoJornada(baseNum);
+      setJornadaId(data.id);
+      setBaseEfectivoInput('');
+      alert(`✅ Turno iniciado con una base de $${baseNum.toLocaleString()}`);
     }
   };
 
-  // --------------------------------------------------------------------
-  // MANEJO DE CARRITO Y PEDIDOS
-  // --------------------------------------------------------------------
-  const abrirModalProducto = (p: Producto) => {
-    setProductoEdicion(p);
-    setCantidadEdicion(1);
-    setNotasEdicion('');
-    setAgregadosEdicion({});
+  const obtenerProductos = async (uId: string) => {
+    const { data } = await supabase.from('productos').select('*').eq('user_id', uId).order('nombre', { ascending: true });
+    if (data) setProductos(data as Producto[]);
   };
 
-  const agregarAlCarrito = () => {
-    if (!productoEdicion) return;
+  const obtenerInsumos = async (uId: string) => {
+    const { data } = await supabase.from('insumos').select('*').eq('user_id', uId).order('nombre', { ascending: true });
+    if (data) setInsumos(data as Insumo[]);
+  };
 
-    const listaAgregados = Object.entries(agregadosEdicion)
-      .filter(([_, cant]) => cant > 0)
-      .map(([ingId, cant]) => {
-        const ing = ingredientes.find((i) => i.id === ingId);
+  const obtenerRecetas = async (uId: string) => {
+    const { data } = await supabase.from('recetas').select('*').eq('user_id', uId);
+    if (data) setRecetas(data as RecetaItem[]);
+  };
+
+  const obtenerVentas = async (uId: string) => {
+    const { data } = await supabase.from('ventas').select('*').eq('user_id', uId).order('created_at', { ascending: false });
+    if (data) setVentas(data as Venta[]);
+  };
+
+  const obtenerMesas = async (uId: string) => {
+    const { data } = await supabase.from('mesas').select('*').eq('user_id', uId).order('nombre', { ascending: true });
+    
+    if (data && data.length === 0) {
+      const mesasIniciales = [
+        { nombre: 'Mesa 1', user_id: uId, estado: 'libre' },
+        { nombre: 'Mesa 2', user_id: uId, estado: 'libre' },
+        { nombre: 'Mesa 3', user_id: uId, estado: 'libre' },
+        { nombre: 'Mesa 4', user_id: uId, estado: 'libre' },
+        { nombre: 'Mesa 5', user_id: uId, estado: 'libre' },
+      ];
+      await supabase.from('mesas').insert(mesasIniciales);
+      const { data: dataCreadas } = await supabase.from('mesas').select('*').eq('user_id', uId).order('nombre', { ascending: true });
+      if (dataCreadas) setMesas(dataCreadas as Mesa[]);
+    } else if (data) {
+      setMesas(data as Mesa[]);
+    }
+  };
+
+  const obtenerCierres = async (uId: string) => {
+    const { data } = await supabase.from('cierres_caja').select('*').eq('user_id', uId).order('fecha', { ascending: false });
+    if (data) setCierres(data as CierreCaja[]);
+  };
+
+  // AISLAMIENTO DE TURNO: Ventas que pertenecen EXCLUSIVAMENTE a la jornada activa actual
+  const ventasJornadaActual = ventas.filter(
+    (v) => v.jornada_id === jornadaId && !v.cierre_id
+  );
+
+  const totalHoy = ventasJornadaActual.reduce((acc, v) => acc + (v.total || 0), 0);
+  const totalEfectivoHoy = ventasJornadaActual.filter((v) => (v.metodo_pago || 'Efectivo') === 'Efectivo').reduce((acc, v) => acc + (v.total || 0), 0);
+  const totalTarjetaHoy = ventasJornadaActual.filter((v) => v.metodo_pago === 'Tarjeta').reduce((acc, v) => acc + (v.total || 0), 0);
+  const totalTransferenciaHoy = ventasJornadaActual.filter((v) => v.metodo_pago === 'Transferencia').reduce((acc, v) => acc + (v.total || 0), 0);
+
+  const efectivoEsperadoEnCaja = baseEfectivoJornada + totalEfectivoHoy;
+
+  const difEfectivo = efectivoReal !== '' ? (parseFloat(efectivoReal) || 0) - efectivoEsperadoEnCaja : null;
+  const difTarjeta = tarjetaReal !== '' ? (parseFloat(tarjetaReal) || 0) - totalTarjetaHoy : null;
+  const difTransferencia = transferenciaReal !== '' ? (parseFloat(transferenciaReal) || 0) - totalTransferenciaHoy : null;
+
+  const seleccionarMesa = (m: Mesa) => {
+    if (!cajaAbierta) return alert('⚠️ Debes realizar la apertura de caja para iniciar el turno.');
+    setMesaSeleccionada(m);
+    setLineasMesa(m.pedidos || []);
+    setClienteNombreMesa(m.cliente_nombre || '');
+    setClienteDocMesa(m.cliente_documento || '');
+    setComentarioMesa(m.comentarios || '');
+  };
+
+  const agregarMesa = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!nuevoNombreMesa.trim() || !usuario) return;
+    await supabase.from('mesas').insert([{ nombre: nuevoNombreMesa, user_id: usuario.id, estado: 'libre' }]);
+    setNuevoNombreMesa('');
+    obtenerMesas(usuario.id);
+  };
+
+  const eliminarMesa = async (id: string) => {
+    if (!confirm('¿Eliminar esta mesa?')) return;
+    await supabase.from('mesas').delete().eq('id', id);
+    if (mesaSeleccionada?.id === id) setMesaSeleccionada(null);
+    if (usuario) obtenerMesas(usuario.id);
+  };
+
+  const guardarPedidoMesa = async () => {
+    if (!mesaSeleccionada || !usuario) return;
+
+    const productosValidos = lineasMesa.filter((f) => f.productoId !== '');
+    if (productosValidos.length === 0) return alert('Selecciona al menos un producto');
+
+    const estado = 'ocupada';
+    await supabase.from('mesas').update({ 
+      pedidos: lineasMesa, 
+      estado,
+      cliente_nombre: clienteNombreMesa,
+      cliente_documento: clienteDocMesa,
+      comentarios: comentarioMesa
+    }).eq('id', mesaSeleccionada.id);
+
+    const itemsCocina = productosValidos.map((item) => {
+      const prod = productos.find((p) => p.id === item.productoId);
+      return {
+        nombre: prod ? prod.nombre : 'Producto',
+        cantidad: item.cantidad
+      };
+    });
+
+    const ticketCocina = {
+      numero: numComanda,
+      mesa: mesaSeleccionada.nombre,
+      hora: new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      cliente: clienteNombreMesa || 'Cliente General',
+      comentario: comentarioMesa,
+      items: itemsCocina
+    };
+
+    setNumComanda((prev) => prev + 1);
+    setComandaImprimir(ticketCocina);
+    obtenerMesas(usuario.id);
+  };
+
+  const abrirModalCobrar = () => {
+    if (!mesaSeleccionada) return;
+    const productosValidos = lineasMesa.filter((f) => f.productoId !== '');
+    if (productosValidos.length === 0) return alert('No hay productos seleccionados en la mesa');
+
+    setMontoPagaCon('');
+    setMetodoPago('Efectivo');
+    setMostrarModalCobro(true);
+  };
+
+  const finalizarYCobrarVenta = async () => {
+    if (!mesaSeleccionada || !usuario) return;
+
+    const productosDetalle: ProductoVenta[] = lineasMesa
+      .filter((f) => f.productoId !== '')
+      .map((f) => {
+        const prod = productos.find((p) => p.id === f.productoId);
         return {
-          ingrediente_id: ingId,
-          nombre: ing ? ing.nombre : 'Agregado',
-          precio: ing ? ing.costo_unidad * 1.5 : 0, // Cálculo de precio público del agregado
-          cantidad: cant,
+          nombre: prod ? prod.nombre : '',
+          cantidad: f.cantidad,
+          precioUnitario: prod ? prod.precio : 0,
+          subtotal: prod ? prod.precio * f.cantidad : 0,
         };
       });
 
-    const nuevoItem: ItemPedido = {
-      producto: productoEdicion,
-      cantidad: cantidadEdicion,
-      notas: notasEdicion,
-      agregados: listaAgregados.length > 0 ? listaAgregados : undefined,
+    const totalCalculado = productosDetalle.reduce((acc, item) => acc + item.subtotal, 0);
+
+    if (metodoPago === 'Efectivo') {
+      const pagaConNum = parseFloat(montoPagaCon) || 0;
+      if (pagaConNum < totalCalculado) {
+        return alert(`El monto ingresado ($${pagaConNum.toLocaleString()}) es menor al total a cobrar ($${totalCalculado.toLocaleString()})`);
+      }
+    }
+
+    for (const f of lineasMesa.filter((item) => item.productoId !== '')) {
+      const ingredientes = recetas.filter((r) => r.producto_id === f.productoId);
+      for (const ing of ingredientes) {
+        const insumoObj = insumos.find((i) => i.id === ing.insumo_id);
+        if (insumoObj) {
+          const consumoTotal = Number(ing.cantidad_requerida) * f.cantidad;
+          const nuevoStock = Number(insumoObj.stock_actual) - consumoTotal;
+          await supabase.from('insumos').update({ stock_actual: nuevoStock }).eq('id', insumoObj.id);
+        }
+      }
+    }
+
+    const nuevaVenta = {
+      cliente: clienteNombreMesa || `Mesa: ${mesaSeleccionada.nombre}`,
+      documento: clienteDocMesa || 'N/A',
+      metodo_pago: metodoPago,
+      productos: productosDetalle,
+      total: totalCalculado,
+      user_id: usuario.id,
+      jornada_id: jornadaId,
     };
 
-    setCarrito((prev) => [...prev, nuevoItem]);
-    setProductoEdicion(null);
-  };
+    const { data: ventaGuardada, error } = await supabase.from('ventas').insert([nuevaVenta]).select();
 
-  const eliminarDelCarrito = (idx: number) => {
-    setCarrito((prev) => prev.filter((_, i) => i !== idx));
-  };
+    if (error) {
+      alert('Error al registrar la venta: ' + error.message);
+    } else if (ventaGuardada && ventaGuardada[0]) {
+      await supabase.from('mesas').update({ 
+        pedidos: [], 
+        estado: 'libre',
+        cliente_nombre: '',
+        cliente_documento: '',
+        comentarios: ''
+      }).eq('id', mesaSeleccionada.id);
 
-  const calcularSubtotalItem = (item: ItemPedido) => {
-    const costoAgregados = item.agregados
-      ? item.agregados.reduce((sum, a) => sum + a.precio * a.cantidad, 0)
-      : 0;
-    return (item.producto.precio + costoAgregados) * item.cantidad;
-  };
-
-  const totalCarrito = carrito.reduce((sum, item) => sum + calcularSubtotalItem(item), 0);
-
-  const enviarPedidoACocina = async () => {
-    if (carrito.length === 0) {
-      alert('Añade al menos un producto al pedido.');
-      return;
-    }
-
-    try {
-      const nuevoPedido = {
-        mesa: mesaSeleccionada,
-        cliente: clienteNombre.trim() || 'Cliente General',
-        items: carrito,
-        total: totalCarrito,
-        estado: 'Pendiente',
-      };
-
-      const { data, error } = await supabase.from('pedidos').insert([nuevoPedido]).select().single();
-
-      if (error) throw error;
-
-      if (data) {
-        setPedidos((prev) => [...prev, data]);
-        setCarrito([]);
-        setClienteNombre('');
-        alert(`✅ Pedido enviado a cocina para la ${mesaSeleccionada}.`);
-      }
-    } catch (err) {
-      console.error('Error al enviar pedido:', err);
-      alert('Error al guardar el pedido.');
+      setVentaConfirmadaTicket(ventaGuardada[0] as Venta);
+      setLineasMesa([]);
+      setClienteNombreMesa('');
+      setClienteDocMesa('');
+      setComentarioMesa('');
+      setMesaSeleccionada(null);
+      setMostrarModalCobro(false);
+      await cargarTodo(usuario.id);
     }
   };
 
-  const cambiarEstadoPedido = async (id: string, nuevoEstado: Pedido['estado']) => {
-    try {
-      const { error } = await supabase.from('pedidos').update({ estado: nuevoEstado }).eq('id', id);
-      if (error) throw error;
-
-      setPedidos((prev) => prev.map((p) => (p.id === id ? { ...p, estado: nuevoEstado } : p)));
-    } catch (err) {
-      console.error('Error al cambiar estado:', err);
-    }
-  };
-
-  // --------------------------------------------------------------------
-  // PROCESO DE COBRO Y REGISTRO DE VENTA
-  // --------------------------------------------------------------------
-  const procesarCobroVenta = async () => {
-    if (!pedidoACobrar) return;
-
-    if (!cajaAbierta) {
-      alert('⚠️ Debes abrir la caja antes de poder registrar cobros.');
-      return;
-    }
-
-    const totalFinal = Math.max(0, pedidoACobrar.total - descuentoMonto + propinaMonto);
-
-    try {
-      // 1. Guardar la Venta en la Base de Datos asociando la jornada activa
-      const nuevaVenta = {
-        cliente: pedidoACobrar.cliente,
-        metodo_pago: metodoPago,
-        total: totalFinal,
-        descuento: descuentoMonto,
-        propina: propinaMonto,
-        items: pedidoACobrar.items,
-        jornada_id: jornadaId,
-      };
-
-      const { data: ventaGuardada, error: errVenta } = await supabase
-        .from('ventas')
-        .insert([nuevaVenta])
-        .select()
-        .single();
-
-      if (errVenta) throw errVenta;
-
-      // 2. Marcar Pedido como Pagado
-      await supabase.from('pedidos').update({ estado: 'Pagado', metodo_pago: metodoPago }).eq('id', pedidoACobrar.id);
-
-      // 3. Descontar Inventario automáticamente según las recetas de la venta
-      for (const item of pedidoACobrar.items) {
-        if (item.producto.receta) {
-          for (const ingReceta of item.producto.receta) {
-            const ingActual = ingredientes.find((i) => i.id === ingReceta.ingrediente_id);
-            if (ingActual) {
-              const nuevoStock = Math.max(0, ingActual.stock_actual - ingReceta.cantidad * item.cantidad);
-              await supabase.from('ingredientes').update({ stock_actual: nuevoStock }).eq('id', ingActual.id);
-            }
-          }
-        }
-      }
-
-      // Actualizar estados locales
-      if (ventaGuardada) setVentas((prev) => [ventaGuardada, ...prev]);
-      setPedidos((prev) => prev.filter((p) => p.id !== pedidoACobrar.id));
-      setPedidoACobrar(null);
-      setMontoEfectivoCliente('');
-      setDescuentoMonto(0);
-      setPropinaMonto(0);
-
-      alert('💸 ¡Venta procesada con éxito y stock actualizado!');
-      cargarDatos(); // Recargar datos frescos
-    } catch (err) {
-      console.error('Error al procesar la venta:', err);
-      alert('Error al completar el cobro.');
-    }
-  };
-
-  // --------------------------------------------------------------------
-  // CÁLCULOS DE JORNADA / CAJA ACTUAL Y CIERRE
-  // --------------------------------------------------------------------
-  const ventasJornadaActual = ventas.filter(
-    (v) => (jornadaId && v.jornada_id === jornadaId) || (!v.cierre_id && cajaAbierta)
-  );
-
-  const totalEfectivoHoy = ventasJornadaActual
-    .filter((v) => v.metodo_pago === 'Efectivo')
-    .reduce((sum, v) => sum + v.total, 0);
-
-  const totalTarjetaHoy = ventasJornadaActual
-    .filter((v) => v.metodo_pago === 'Tarjeta')
-    .reduce((sum, v) => sum + v.total, 0);
-
-  const totalTransferenciaHoy = ventasJornadaActual
-    .filter((v) => v.metodo_pago === 'Transferencia')
-    .reduce((sum, v) => sum + v.total, 0);
-
-  const totalVentasJornada = totalEfectivoHoy + totalTarjetaHoy + totalTransferenciaHoy;
-
-  // Cálculos de diferencias de arqueo
-  const numEfectivoReal = parseFloat(efectivoReal) || 0;
-  const numTarjetaReal = parseFloat(tarjetaReal) || 0;
-  const numTransferenciaReal = parseFloat(transferenciaReal) || 0;
-
-  const difEfectivo = efectivoReal !== '' ? numEfectivoReal - (baseEfectivoJornada + totalEfectivoHoy) : null;
-  const difTarjeta = tarjetaReal !== '' ? numTarjetaReal - totalTarjetaHoy : null;
-  const difTransferencia = transferenciaReal !== '' ? numTransferenciaReal - totalTransferenciaHoy : null;
-
+  // CIERRE DE ARQUEO / TURNO DEFINITIVO
   const realizarCierreCaja = async () => {
-    if (!cajaAbierta || !jornadaId) {
-      alert('No hay ninguna caja abierta actualmente.');
-      return;
-    }
+    if (!usuario || !jornadaId) return alert('No hay un turno activo para cerrar');
+    if (!confirm('¿Seguro de realizar el cierre de turno? El arqueo quedará congelado y guardado en el historial.')) return;
 
-    if (efectivoReal === '' || tarjetaReal === '' || transferenciaReal === '') {
-      alert('Por favor completa el conteo físico real para todos los métodos de pago.');
-      return;
-    }
+    const efReal = parseFloat(efectivoReal) || 0;
+    const tarReal = parseFloat(tarjetaReal) || 0;
+    const transReal = parseFloat(transferenciaReal) || 0;
 
-    const difTotal = (difEfectivo || 0) + (difTarjeta || 0) + (difTransferencia || 0);
+    const cierre = {
+      base_inicial: baseEfectivoJornada,
+      total_sistema: totalHoy,
+      efectivo_sistema: totalEfectivoHoy,
+      tarjeta_sistema: totalTarjetaHoy,
+      transferencia_sistema: totalTransferenciaHoy,
+      efectivo_real: efReal,
+      tarjeta_real: tarReal,
+      transferencia_real: transReal,
+      diferencia_efectivo: efReal - efectivoEsperadoEnCaja,
+      diferencia_tarjeta: tarReal - totalTarjetaHoy,
+      diferencia_transferencia: transReal - totalTransferenciaHoy,
+      user_id: usuario.id,
+    };
 
-    try {
-      // 1. Guardar Registro de Cierre
-      const nuevoCierre = {
-        base_inicial: baseEfectivoJornada,
-        total_ventas: totalVentasJornada,
-        efectivo_sistema: totalEfectivoHoy,
-        tarjeta_sistema: totalTarjetaHoy,
-        transferencia_sistema: totalTransferenciaHoy,
-        efectivo_real: numEfectivoReal,
-        tarjeta_real: numTarjetaReal,
-        transferencia_real: numTransferenciaReal,
-        diferencia_total: difTotal,
-        fecha: new Date().toISOString(),
-      };
+    const { data: cierreGuardado, error } = await supabase.from('cierres_caja').insert([cierre]).select();
 
-      const { data: cierreGuardado, error: errCierre } = await supabase
-        .from('cierres_caja')
-        .insert([nuevoCierre])
-        .select()
-        .single();
+    if (error) {
+      alert('Error en el cierre: ' + error.message);
+    } else if (cierreGuardado && cierreGuardado[0]) {
+      const nuevoCierreId = cierreGuardado[0].id;
 
-      if (errCierre) throw errCierre;
+      // 1. Vincular masivamente las ventas de esta jornada al nuevo cierre_id
+      await supabase
+        .from('ventas')
+        .update({ cierre_id: nuevoCierreId })
+        .eq('jornada_id', jornadaId);
 
-      // 2. Asociar el `cierre_id` a todas las ventas pertenecientes a este turno
-      if (cierreGuardado) {
-        for (const v of ventasJornadaActual) {
-          await supabase.from('ventas').update({ cierre_id: cierreGuardado.id }).eq('id', v.id);
-        }
-      }
+      // 2. Marcar la jornada como cerrada
+      await supabase
+        .from('jornadas')
+        .update({ estado: 'cerrada' })
+        .eq('id', jornadaId);
 
-      // 3. Cerrar la Jornada Activa
-      await supabase.from('jornadas').update({ estado: 'Cerrada' }).eq('id', jornadaId);
+      alert('🔒 Arqueo completado y guardado de forma inmutable en el historial.');
 
-      alert('🔒 Cierre de caja guardado con éxito. Se ha finalizado la jornada.');
+      // 3. Resetear el estado local para dejar el sistema preparado para un nuevo turno en $0
+      setCajaAbierta(false);
+      setBaseEfectivoJornada(0);
+      setJornadaId(null);
+      setBaseEfectivoInput('');
       setEfectivoReal('');
       setTarjetaReal('');
       setTransferenciaReal('');
-      cargarDatos();
-    } catch (err) {
-      console.error('Error al realizar el cierre:', err);
-      alert('Error al guardar el cierre de caja.');
+      setMesaSeleccionada(null);
+
+      // Recargar todo desde Supabase inmediatamente para sincronizar el cierre_id en las ventas locales
+      await cargarTodo(usuario.id);
     }
   };
 
-  // --------------------------------------------------------------------
-  // FILTRADO DE HISTORIAL DE VENTAS
-  // --------------------------------------------------------------------
-  const arqueoSeleccionado = cierres.find((c) => String(c.id) === String(cierreFiltroSeleccionado));
-
-  const ventasFiltradasHistorial =
-    cierreFiltroSeleccionado === 'abierta'
-      ? ventas.filter((v) => (!v.cierre_id || v.cierre_id === null) && String(v.jornada_id) === String(jornadaId))
-      : ventas.filter((v) => {
-          if (!cierreFiltroSeleccionado || !arqueoSeleccionado) return false;
-
-          // 1. Coincidencia directa por cierre_id
-          if (v.cierre_id && String(v.cierre_id) === String(cierreFiltroSeleccionado)) {
-            return true;
-          }
-
-          // 2. Coincidencia por jornada_id
-          if (v.jornada_id && String(v.jornada_id) === String(arqueoSeleccionado.id)) {
-            return true;
-          }
-
-          // 3. Rescate por ventana de tiempo (ventas en las 24 hrs previas a la hora del cierre)
-          const fechaVenta = new Date(v.created_at).valueOf();
-          const fechaCierre = new Date(arqueoSeleccionado.fecha).valueOf();
-          const difHoras = (fechaCierre - fechaVenta) / (1000 * 60 * 60);
-
-          return !v.cierre_id && difHoras >= 0 && difHoras <= 24;
-        });
-
-  // Categorías Únicas
-  const categorias = ['Todas', ...Array.from(new Set(productos.map((p) => p.categoria)))];
-
-  const formatearFecha = (fechaStr: string) => {
-    return new Date(fechaStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const eliminarVenta = async (id: number) => {
+    if (!confirm(`¿Eliminar la venta #${id}?`)) return;
+    await supabase.from('ventas').delete().eq('id', id);
+    if (usuario) obtenerVentas(usuario.id);
   };
 
-  // --------------------------------------------------------------------
-  // RENDER PRINCIPAL DE LA APLICACIÓN
-  // --------------------------------------------------------------------
-  return (
-    <div className={styles.contenedorApp}>
-      {/* NAVEGACIÓN SUPERIOR / NAVBAR */}
-      <header className={styles.navbarHeader}>
-        <div className={styles.brandTitle}>
-          <span>🥙</span> Arepa Secreta
-        </div>
+  const eliminarCierre = async (cierreId: string) => {
+    if (!confirm('¿Eliminar cierre de caja?')) return;
+    await supabase.from('ventas').update({ cierre_id: null }).eq('cierre_id', cierreId);
+    await supabase.from('cierres_caja').delete().eq('id', cierreId);
+    if (usuario) cargarTodo(usuario.id);
+  };
 
-        <nav className={styles.navModulos}>
-          <button
-            className={pestanaPrincipal === 'ventas' ? styles.btnNavActivo : styles.btnNav}
-            onClick={() => setPestanaPrincipal('ventas')}
-          >
-            📊 Ventas y Caja
-          </button>
-          <button
-            className={pestanaPrincipal === 'produccion' ? styles.btnNavActivo : styles.btnNav}
-            onClick={() => setPestanaPrincipal('produccion')}
-          >
-            📦 Producción y Costes
-          </button>
-          <button
-            className={styles.btnSalir}
-            onClick={() => alert('Sesión finalizada.')}
-          >
-            🚪 Salir (allantorres247)
-          </button>
-        </nav>
-      </header>
+  const guardarRecetaMultiple = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!prodRecetaSel || !usuario) return alert('Selecciona un producto');
 
-      {/* SUB-NAVEGACIÓN MÓDULO DE VENTAS */}
-      {pestanaPrincipal === 'ventas' && (
-        <div className={styles.subBarraPestanas}>
-          <button
-            className={subPestanaVentas === 'mesas' ? styles.subBtnActivo : styles.subBtn}
-            onClick={() => setSubPestanaVentas('mesas')}
-          >
-            🍽️ Mesas y Pedidos
-          </button>
-          <button
-            className={subPestanaVentas === 'caja' ? styles.subBtnActivo : styles.subBtn}
-            onClick={() => setSubPestanaVentas('caja')}
-          >
-            💰 Cierre de Caja
-          </button>
-          <button
-            className={subPestanaVentas === 'historiales' ? styles.subBtnActivo : styles.subBtn}
-            onClick={() => setSubPestanaVentas('historiales')}
-          >
-            📋 Historiales
-          </button>
-        </div>
-      )}
+    const inserciones = lineasReceta
+      .filter((l) => l.insumo_id && l.cantidad_requerida)
+      .map((l) => ({
+        producto_id: prodRecetaSel,
+        insumo_id: l.insumo_id,
+        cantidad_requerida: parseFloat(l.cantidad_requerida),
+        user_id: usuario.id,
+      }));
 
-      {/* SUB-NAVEGACIÓN MÓDULO DE PRODUCCIÓN */}
-      {pestanaPrincipal === 'produccion' && (
-        <div className={styles.subBarraPestanas}>
-          <button
-            className={subPestanaProduccion === 'cocina' ? styles.subBtnActivo : styles.subBtn}
-            onClick={() => setSubPestanaProduccion('cocina')}
-          >
-            👨‍🍳 Pantalla de Cocina
-          </button>
-          <button
-            className={subPestanaProduccion === 'recetas' ? styles.subBtnActivo : styles.subBtn}
-            onClick={() => setSubPestanaProduccion('recetas')}
-          >
-            📖 Recetas / Costos
-          </button>
-          <button
-            className={subPestanaProduccion === 'inventario' ? styles.subBtnActivo : styles.subBtn}
-            onClick={() => setSubPestanaProduccion('inventario')}
-          >
-            🥦 Inventario
-          </button>
-        </div>
-      )}
+    if (inserciones.length === 0) return alert('Agrega al menos un insumo');
 
-      {/* CONTENIDO PRINCIPAL */}
-      <main className={styles.mainLayout}>
-        {/* ==================================================================== */}
-        {/* VISTA 1: MESAS Y PEDIDOS (POS) */}
-        {/* ==================================================================== */}
-        {pestanaPrincipal === 'ventas' && subPestanaVentas === 'mesas' && (
-          <div className={styles.gridPosContainer}>
-            {/* PANEL IZQUIERDO: SELECCIÓN Y MENÚ DE PRODUCTOS */}
-            <div className={styles.panelProductos}>
-              <div className={styles.selectorMesaBox}>
-                <label>📍 Seleccionar Mesa / Para Llevar:</label>
-                <div className={styles.gridBotonesMesas}>
-                  {['Mesa 1', 'Mesa 2', 'Mesa 3', 'Mesa 4', 'Para Llevar', 'Domicilio'].map((m) => (
-                    <button
-                      key={m}
-                      className={mesaSeleccionada === m ? styles.btnMesaActiva : styles.btnMesa}
-                      onClick={() => setMesaSeleccionada(m)}
-                    >
-                      {m}
-                    </button>
-                  ))}
+    await supabase.from('recetas').insert(inserciones);
+    setProdRecetaSel('');
+    setLineasReceta([{ insumo_id: '', cantidad_requerida: '' }]);
+    obtenerRecetas(usuario.id);
+  };
+
+  const editarCantidadReceta = async (id: string) => {
+    if (!cantEditandoVal || !usuario) return;
+    await supabase.from('recetas').update({ cantidad_requerida: parseFloat(cantEditandoVal) }).eq('id', id);
+    setRecetaEditandoId(null); setCantEditandoVal('');
+    obtenerRecetas(usuario.id);
+  };
+
+  const eliminarRecetaItem = async (id: string) => {
+    if (!confirm('¿Eliminar ingrediente?')) return;
+    await supabase.from('recetas').delete().eq('id', id);
+    if (usuario) obtenerRecetas(usuario.id);
+  };
+
+  const guardarInsumo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!usuario) return;
+    await supabase.from('insumos').insert([{ nombre: nuevoInsumoNombre, unidad: nuevoInsumoUnidad, stock_actual: parseFloat(nuevoInsumoStock), user_id: usuario.id }]);
+    setNuevoInsumoNombre(''); setNuevoInsumoStock('');
+    obtenerInsumos(usuario.id);
+  };
+
+  const guardarProducto = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!usuario) return;
+    const precioNum = parseFloat(nuevoPrecio);
+    if (productoEditando) {
+      await supabase.from('productos').update({ nombre: nuevoNombre, precio: precioNum }).eq('id', productoEditando.id);
+      setProductoEditando(null);
+    } else {
+      await supabase.from('productos').insert([{ nombre: nuevoNombre, precio: precioNum, user_id: usuario.id }]);
+    }
+    setNuevoNombre(''); setNuevoPrecio('');
+    obtenerProductos(usuario.id);
+  };
+
+  const actualizarStockFisico = async (insumoId: string) => {
+    const valor = conteosFisicos[insumoId];
+    if (!valor || !usuario) return;
+    await supabase.from('insumos').update({ stock_actual: parseFloat(valor) }).eq('id', insumoId);
+    setConteosFisicos((prev) => ({ ...prev, [insumoId]: '' }));
+    obtenerInsumos(usuario.id);
+  };
+
+  const formatearFecha = (fechaISO: string) => new Date(fechaISO).toLocaleDateString('es-CO', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+  const totalCalculadoMesa = lineasMesa.reduce((acc, f) => {
+    const p = productos.find((prod) => prod.id === f.productoId);
+    return acc + (p ? p.precio : 0) * f.cantidad;
+  }, 0);
+
+  const pagaConValor = parseFloat(montoPagaCon) || 0;
+  const cambioEfectivo = pagaConValor - totalCalculadoMesa;
+
+  // Lógica de filtrado dinámico para el Historial de Ventas por Arqueo/Turno
+  const arqueoSeleccionado = cierres.find((c) => c.id === cierreFiltroSeleccionado);
+
+  // Muestra las ventas buscando coincidencia directa por cierre_id o por jornada_id asociada
+  const ventasFiltradasHistorial = cierreFiltroSeleccionado === 'abierta'
+    ? ventas.filter((v) => v.jornada_id === jornadaId && !v.cierre_id)
+    : ventas.filter((v) => v.cierre_id === cierreFiltroSeleccionado);
+
+  if (cargandoAuth) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', fontFamily: 'sans-serif' }}>
+        <h3>Cargando sistema RestoPOS...</h3>
+      </div>
+    );
+  }
+
+  // LOGIN / REGISTRO
+  if (!usuario) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: '#0f172a', fontFamily: 'sans-serif', padding: '20px 0' }}>
+        <div style={{ background: 'white', padding: '32px', borderRadius: '16px', border: '2px solid #cbd5e1', maxWidth: '460px', width: '90%', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)' }}>
+          <h2 style={{ margin: '0 0 6px', color: '#0f172a', textAlign: 'center' }}>🍽️ RestoPOS Pro</h2>
+          <p style={{ margin: '0 0 20px', color: '#475569', textAlign: 'center', fontSize: '14px', fontWeight: '500' }}>
+            {esRegistro ? 'Completa los datos para la facturación' : 'Inicia sesión para continuar'}
+          </p>
+
+          <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {esRegistro && (
+              <>
+                <div>
+                  <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>Nombre de la Persona (Propietario)</label>
+                  <input
+                    type="text"
+                    placeholder="Ej: Carlos Mendoza"
+                    value={nombrePersonaInput}
+                    onChange={(e) => setNombrePersonaInput(e.target.value)}
+                    style={{ width: '100%', padding: '10px', border: '1.5px solid #64748b', borderRadius: '8px', color: '#0f172a', fontSize: '14px', boxSizing: 'border-box' }}
+                    required
+                  />
                 </div>
-              </div>
+                <div>
+                  <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>Nombre del Negocio / Local</label>
+                  <input
+                    type="text"
+                    placeholder="Ej: Hamburguesas El Valle"
+                    value={nombreLocalInput}
+                    onChange={(e) => setNombreLocalInput(e.target.value)}
+                    style={{ width: '100%', padding: '10px', border: '1.5px solid #64748b', borderRadius: '8px', color: '#0f172a', fontSize: '14px', boxSizing: 'border-box' }}
+                    required
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>NIT o Cédula</label>
+                  <input
+                    type="text"
+                    placeholder="Ej: 901.234.567-1"
+                    value={documentoLocalInput}
+                    onChange={(e) => setDocumentoLocalInput(e.target.value)}
+                    style={{ width: '100%', padding: '10px', border: '1.5px solid #64748b', borderRadius: '8px', color: '#0f172a', fontSize: '14px', boxSizing: 'border-box' }}
+                    required
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>Dirección del Local</label>
+                  <input
+                    type="text"
+                    placeholder="Ej: Calle 45 # 12 - 34"
+                    value={direccionLocalInput}
+                    onChange={(e) => setDireccionLocalInput(e.target.value)}
+                    style={{ width: '100%', padding: '10px', border: '1.5px solid #64748b', borderRadius: '8px', color: '#0f172a', fontSize: '14px', boxSizing: 'border-box' }}
+                    required
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>Número de Teléfono</label>
+                  <input
+                    type="text"
+                    placeholder="Ej: 300 123 4567"
+                    value={telefonoLocalInput}
+                    onChange={(e) => setTelefonoLocalInput(e.target.value)}
+                    style={{ width: '100%', padding: '10px', border: '1.5px solid #64748b', borderRadius: '8px', color: '#0f172a', fontSize: '14px', boxSizing: 'border-box' }}
+                    required
+                  />
+                </div>
+              </>
+            )}
 
-              {/* BARRA DE CATEGORÍAS */}
-              <div className={styles.barCategorias}>
-                {categorias.map((cat) => (
-                  <button
-                    key={cat}
-                    className={categoriaActiva === cat ? styles.btnCatActiva : styles.btnCat}
-                    onClick={() => setCategoriaActiva(cat)}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-
-              {/* GRID DE PRODUCTOS */}
-              <div className={styles.gridProductosCards}>
-                {productos
-                  .filter((p) => categoriaActiva === 'Todas' || p.categoria === categoriaActiva)
-                  .map((p) => (
-                    <div key={p.id} className={styles.cardProducto} onClick={() => abrirModalProducto(p)}>
-                      <h4>{p.nombre}</h4>
-                      <span className={styles.tagCategoria}>{p.categoria}</span>
-                      <div className={styles.precioCard}>${p.precio.toLocaleString()}</div>
-                    </div>
-                  ))}
-              </div>
+            <div>
+              <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>Correo Electrónico</label>
+              <input
+                type="email"
+                placeholder="usuario@negocio.com"
+                value={emailInput}
+                onChange={(e) => setEmailInput(e.target.value)}
+                style={{ width: '100%', padding: '10px', border: '1.5px solid #64748b', borderRadius: '8px', color: '#0f172a', fontSize: '14px', boxSizing: 'border-box' }}
+                required
+              />
             </div>
 
-            {/* PANEL DERECHO: DETALLE DEL PEDIDO Y COBRO */}
-            <div className={styles.panelCarrito}>
-              <h3>🧾 Pedido Actual ({mesaSeleccionada})</h3>
+            <div>
+              <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>Contraseña</label>
+              <input
+                type="password"
+                placeholder="••••••••"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                style={{ width: '100%', padding: '10px', border: '1.5px solid #64748b', borderRadius: '8px', color: '#0f172a', fontSize: '14px', boxSizing: 'border-box' }}
+                required
+              />
+            </div>
 
-              <div className={styles.inputNombreCliente}>
-                <input
-                  type="text"
-                  placeholder="Nombre del Cliente (Opcional)"
-                  value={clienteNombre}
-                  onChange={(e) => setClienteNombre(e.target.value)}
-                />
-              </div>
+            <button
+              type="submit"
+              style={{ background: '#2563eb', color: 'white', border: '2px solid #1d4ed8', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer', marginTop: '6px' }}
+            >
+              {esRegistro ? 'Registrar Mi Negocio' : 'Iniciar Sesión'}
+            </button>
+          </form>
 
-              <div className={styles.listaItemsCarrito}>
-                {carrito.length === 0 ? (
-                  <p className={styles.emptyCartMsg}>Selecciona productos del menú para agregar al pedido.</p>
+          <div style={{ marginTop: '18px', textAlign: 'center', borderTop: '1px solid #e2e8f0', paddingTop: '14px' }}>
+            <button
+              type="button"
+              onClick={() => setEsRegistro(!esRegistro)}
+              style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}
+            >
+              {esRegistro ? '¿Ya tienes cuenta? Inicia sesión' : '¿No tienes cuenta? Regístrate aquí'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.contenedorApp}>
+      {/* BARRA SUPERIOR */}
+      <nav className={styles.barrasNavegacion}>
+        <div className={styles.brandTitle}>
+          🍽️ {perfil?.nombre_local ? perfil.nombre_local : 'RestoPOS Pro'}
+        </div>
+        <div className={styles.botonesModulo}>
+          <button className={`${styles.btnModulo} ${modulo === 'ventas' ? styles.activeModulo : ''}`} onClick={() => setModulo('ventas')}>
+            🏪 Ventas y Caja
+          </button>
+          <button className={`${styles.btnModulo} ${modulo === 'produccion' ? styles.activeModulo : ''}`} onClick={() => setModulo('produccion')}>
+            📦 Producción y Costes
+          </button>
+          <button onClick={cerrarSesion} className={styles.btnEliminarConBorde} style={{ marginLeft: '12px' }}>
+            🚪 Salir ({usuario.email?.split('@')[0]})
+          </button>
+        </div>
+      </nav>
+
+      {/* MÓDULO VENTAS */}
+      {modulo === 'ventas' && (
+        <div>
+          <div className={styles.subBarra}>
+            <button className={subPestanaVentas === 'mesas' ? styles.subActive : ''} onClick={() => setSubPestanaVentas('mesas')}>🪑 Mesas y Pedidos</button>
+            <button className={subPestanaVentas === 'caja' ? styles.subActive : ''} onClick={() => setSubPestanaVentas('caja')}>💰 Cierre de Caja</button>
+            <button className={subPestanaVentas === 'historial' ? styles.subActive : ''} onClick={() => setSubPestanaVentas('historial')}>📋 Historiales</button>
+          </div>
+
+          {/* MESAS */}
+          {subPestanaVentas === 'mesas' && (
+            <div className={styles.layoutTresColumnas}>
+              <div className={styles.widgetArqueoIzquierdo}>
+                <div className={styles.cardArqueoHeader}>
+                  <h4>💵 Arqueo / Turno Activo</h4>
+                  <span className={cajaAbierta ? styles.statusAbierta : styles.statusCerrada}>
+                    {cajaAbierta ? '🟢 TURNO ABIERTO' : '🔴 SIN TURNO'}
+                  </span>
+                </div>
+
+                {!cajaAbierta ? (
+                  <div className={styles.aperturaBox}>
+                    <p style={{ fontSize: '13px', color: '#64748b' }}>Ingresa la base inicial para abrir el turno:</p>
+                    <input
+                      type="number"
+                      placeholder="Base ($)"
+                      className={styles.inputChico}
+                      value={baseEfectivoInput}
+                      onChange={(e) => setBaseEfectivoInput(e.target.value)}
+                    />
+                    <button onClick={abrirCajaJornada} className={styles.btnApertura}>
+                      🔓 ABRIR NUEVO TURNO
+                    </button>
+                  </div>
                 ) : (
-                  carrito.map((item, idx) => (
-                    <div key={idx} className={styles.itemCarritoCard}>
-                      <div className={styles.infoItem}>
-                        <strong>
-                          {item.cantidad}x {item.producto.nombre}
-                        </strong>
-                        <span className={styles.subtotalItem}>${calcularSubtotalItem(item).toLocaleString()}</span>
-                      </div>
-                      {item.notas && <p className={styles.notasItemText}>📝 {item.notas}</p>}
-                      {item.agregados && item.agregados.length > 0 && (
-                        <div className={styles.agregadosListText}>
-                          {item.agregados.map((a) => (
-                            <span key={a.ingrediente_id}>
-                              + {a.cantidad} {a.nombre} (${(a.precio * a.cantidad).toLocaleString()})
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      <button className={styles.btnQuitarItem} onClick={() => eliminarDelCarrito(idx)}>
-                        🗑️
-                      </button>
-                    </div>
-                  ))
+                  <div className={styles.resumenArqueoBox}>
+                    <div className={styles.filaResumen}><span>Base Inicial:</span><strong>${baseEfectivoJornada.toLocaleString()}</strong></div>
+                    <div className={styles.filaResumen}><span>💵 Efectivo:</span><strong>${totalEfectivoHoy.toLocaleString()}</strong></div>
+                    <div className={styles.filaResumen}><span>💳 Tarjeta:</span><strong>${totalTarjetaHoy.toLocaleString()}</strong></div>
+                    <div className={styles.filaResumen}><span>📲 Transferencia:</span><strong>${totalTransferenciaHoy.toLocaleString()}</strong></div>
+                    <div className={styles.filaResumenTotal}><span>Total en Caja:</span><strong>${(baseEfectivoJornada + totalHoy).toLocaleString()}</strong></div>
+                  </div>
                 )}
               </div>
 
-              <div className={styles.footerCarrito}>
-                <div className={styles.filaTotal}>
-                  <span>Total:</span>
-                  <h2>${totalCarrito.toLocaleString()}</h2>
+              <div className={styles.seccionMesasGrid}>
+                <div className={styles.headerConBoton}>
+                  <form onSubmit={agregarMesa} style={{ display: 'flex', gap: '8px', width: '100%' }}>
+                    <input type="text" placeholder="Nombre de mesa" className={styles.inputChico} value={nuevoNombreMesa} onChange={(e) => setNuevoNombreMesa(e.target.value)} required />
+                    <button type="submit" className={styles.btnAgregarConBorde}>＋ Agregar Mesa</button>
+                  </form>
                 </div>
-                <button className={styles.btnEnviarCocina} onClick={enviarPedidoACocina} disabled={carrito.length === 0}>
-                  🔥 ENVIAR A COCINA
+
+                <div className={styles.reticulaMesas}>
+                  {mesas.map((m) => (
+                    <div
+                      key={m.id}
+                      className={`${styles.tarjetaMesa} ${m.estado === 'ocupada' ? styles.mesaOcupada : styles.mesaLibre} ${mesaSeleccionada?.id === m.id ? styles.mesaSeleccionada : ''}`}
+                      onClick={() => seleccionarMesa(m)}
+                    >
+                      <span className={styles.badgeEstado}>{m.estado.toUpperCase()}</span>
+                      <h4>{m.nombre}</h4>
+                      <p>{m.pedidos ? m.pedidos.length : 0} ítems</p>
+                      <button onClick={(e) => { e.stopPropagation(); eliminarMesa(m.id); }} className={styles.btnTrashMesa}>🗑️</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className={styles.panelPedidoMesa}>
+                {mesaSeleccionada ? (
+                  <>
+                    <h3>Atendiendo: {mesaSeleccionada.nombre}</h3>
+                    <div className={styles.formClienteGrid}>
+                      <input type="text" placeholder="Cliente" className={styles.inputChico} value={clienteNombreMesa} onChange={(e) => setClienteNombreMesa(e.target.value)} />
+                      <input type="text" placeholder="Cédula/NIT" className={styles.inputChico} value={clienteDocMesa} onChange={(e) => setClienteDocMesa(e.target.value)} />
+                    </div>
+
+                    <div className={styles.listaProductosPedido}>
+                      {lineasMesa.map((f, index) => (
+                        <div key={f.id} className={styles.filaPedido}>
+                          <select className={styles.selectChico} value={f.productoId} onChange={(e) => {
+                            const n = [...lineasMesa];
+                            n[index].productoId = e.target.value;
+                            setLineasMesa(n);
+                          }}>
+                            <option value="">-- Producto --</option>
+                            {productos.map((p) => <option key={p.id} value={p.id}>{p.nombre} (${p.precio})</option>)}
+                          </select>
+                          <input type="number" min="1" value={f.cantidad} className={styles.cantInput} onChange={(e) => {
+                            const n = [...lineasMesa];
+                            n[index].cantidad = parseInt(e.target.value) || 1;
+                            setLineasMesa(n);
+                          }} />
+                          <button onClick={() => setLineasMesa(lineasMesa.filter((item) => item.id !== f.id))} className={styles.btnTrash}>✕</button>
+                        </div>
+                      ))}
+                    </div>
+
+                    <button className={styles.btnAgregarLineaConBorde} onClick={() => setLineasMesa([...lineasMesa, { id: Date.now(), productoId: '', cantidad: 1 }])}>
+                      ＋ Agregar Producto
+                    </button>
+
+                    <div style={{ marginTop: '12px' }}>
+                      <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>
+                        📝 Observaciones para Cocina:
+                      </label>
+                      <textarea
+                        rows={2}
+                        placeholder="Ej: Sin cebolla, carne término medio, salsa aparte..."
+                        value={comentarioMesa}
+                        onChange={(e) => setComentarioMesa(e.target.value)}
+                        style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box' }}
+                      />
+                    </div>
+
+                    <div className={styles.footerTotalMesa}>
+                      <span>Total Mesa:</span>
+                      <strong>${totalCalculadoMesa.toLocaleString()}</strong>
+                    </div>
+
+                    <div className={styles.accionesMesa}>
+                      <button className={styles.btnGuardarPedido} onClick={guardarPedidoMesa}>💾 Guardar Comanda</button>
+                      <button className={styles.btnCobrar} onClick={abrirModalCobrar}>⚡ IR A COBRAR Y FACTURAR</button>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            </div>
+          )}
+
+          {/* CIERRE DE CAJA */}
+          {subPestanaVentas === 'caja' && (
+            <div className={styles.seccionCaja}>
+              <h2>Control y Cierre de Arqueo (Turno Activo)</h2>
+
+              <div className={styles.gridMetricasCaja}>
+                <div className={styles.cardMetrica}><span>Base del Turno</span><h3>${baseEfectivoJornada.toLocaleString()}</h3></div>
+                <div className={styles.cardMetrica}><span>Efectivo Esperado</span><h3 style={{ color: '#16a34a' }}>${efectivoEsperadoEnCaja.toLocaleString()}</h3></div>
+                <div className={styles.cardMetrica}><span>Tarjetas Turno</span><h3 style={{ color: '#9333ea' }}>${totalTarjetaHoy.toLocaleString()}</h3></div>
+                <div className={styles.cardMetrica}><span>Transferencias Turno</span><h3 style={{ color: '#ea580c' }}>${totalTransferenciaHoy.toLocaleString()}</h3></div>
+              </div>
+
+              <div className={styles.formArqueoCaja}>
+                <h3>Ingresar Conteo Físico Real del Turno</h3>
+                <div className={styles.gridArqueoInputs}>
+                  <div>
+                    <label>💵 Efectivo Físico (Incluyendo Base)</label>
+                    <input type="number" placeholder="Monto real" value={efectivoReal} onChange={(e) => setEfectivoReal(e.target.value)} />
+                    {difEfectivo !== null && (
+                      <span className={difEfectivo < 0 ? styles.badgeDiferenciaError : styles.badgeDiferenciaOk}>
+                        {difEfectivo === 0 ? '✅ Cuadre exacto' : difEfectivo < 0 ? `⚠️ Falta: $${difEfectivo.toLocaleString()}` : `➕ Sobra: +$${difEfectivo.toLocaleString()}`}
+                      </span>
+                    )}
+                  </div>
+                  <div>
+                    <label>💳 Tarjetas Físico</label>
+                    <input type="number" placeholder="Monto real" value={tarjetaReal} onChange={(e) => setTarjetaReal(e.target.value)} />
+                    {difTarjeta !== null && (
+                      <span className={difTarjeta < 0 ? styles.badgeDiferenciaError : styles.badgeDiferenciaOk}>
+                        {difTarjeta === 0 ? '✅ Cuadre exacto' : difTarjeta < 0 ? `⚠️ Falta: $${difTarjeta.toLocaleString()}` : `➕ Sobra: +$${difTarjeta.toLocaleString()}`}
+                      </span>
+                    )}
+                  </div>
+                  <div>
+                    <label>📲 Transferencias Físico</label>
+                    <input type="number" placeholder="Monto real" value={transferenciaReal} onChange={(e) => setTransferenciaReal(e.target.value)} />
+                    {difTransferencia !== null && (
+                      <span className={difTransferencia < 0 ? styles.badgeDiferenciaError : styles.badgeDiferenciaOk}>
+                        {difTransferencia === 0 ? '✅ Cuadre exacto' : difTransferencia < 0 ? `⚠️ Falta: $${difTransferencia.toLocaleString()}` : `➕ Sobra: +$${difTransferencia.toLocaleString()}`}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <button className={styles.btnCierreAccion} onClick={realizarCierreCaja} disabled={!cajaAbierta}>
+                  🔒 CERRAR Y GUARDAR ARQUEO DE TURNO
                 </button>
               </div>
 
-              {/* LISTA DE PEDIDOS PENDIENTES DE COBRO */}
-              <div className={styles.seccionPedidosActivos}>
-                <h4>⏳ Pedidos por Cobrar</h4>
-                {pedidos.map((ped) => (
-                  <div key={ped.id} className={styles.cardPedidoActivo}>
-                    <div>
-                      <strong>
-                        {ped.mesa} - {ped.cliente}
-                      </strong>
-                      <span className={styles.badgeEstado}>{ped.estado}</span>
-                      <div>${ped.total.toLocaleString()}</div>
-                    </div>
-                    <button
-                      className={styles.btnCobrarPequeno}
-                      onClick={() => {
-                        setPedidoACobrar(ped);
-                        setMontoEfectivoCliente(String(ped.total));
-                      }}
-                    >
-                      💳 Cobrar
-                    </button>
-                  </div>
-                ))}
+              <div style={{ marginTop: '28px' }}>
+                <h3>Ventas del Turno Activo ({ventasJornadaActual.length})</h3>
+                <div className={styles.tablaResponsiveContainer}>
+                  <table className={styles.tablaApp}>
+                    <thead>
+                      <tr><th>Hora</th><th>Cliente</th><th>Método</th><th>Total</th><th>Acción</th></tr>
+                    </thead>
+                    <tbody>
+                      {ventasJornadaActual.length === 0 ? (
+                        <tr><td colSpan={5} style={{ textAlign: 'center', color: '#94a3b8' }}>No hay ventas registradas en el turno actual.</td></tr>
+                      ) : (
+                        ventasJornadaActual.map((v) => (
+                          <tr key={v.id}>
+                            <td>{formatearFecha(v.created_at)}</td>
+                            <td>{v.cliente}</td>
+                            <td>{v.metodo_pago}</td>
+                            <td><strong>${v.total.toLocaleString()}</strong></td>
+                            <td><button onClick={() => setVentaSeleccionada(v)} className={styles.btnVerConBorde}>👁️ Detalle</button></td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* ==================================================================== */}
-        {/* VISTA 2: CIERRE DE CAJA Y ARQUEO DE TURNO */}
-        {/* ==================================================================== */}
-        {pestanaPrincipal === 'ventas' && subPestanaVentas === 'caja' && (
-          <div className={styles.seccionCaja}>
-            <h2>Control y Cierre de Arqueo (Turno Activo)</h2>
-
-            {!cajaAbierta ? (
-              <div className={styles.cardAbrirCaja}>
-                <h3>⚠️ La caja está actualmente CERRADA</h3>
-                <p>Ingresa el monto de la base inicial en efectivo para iniciar el turno de ventas:</p>
-                <div className={styles.rowAbrirCaja}>
-                  <input
-                    type="number"
-                    placeholder="Monto Base (Ej: 1000)"
-                    value={montoBaseInput}
-                    onChange={(e) => setMontoBaseInput(e.target.value)}
-                  />
-                  <button className={styles.btnAbrirCajaAccion} onClick={abrirCajaJornada}>
-                    🚀 ABRIR CAJA Y EMPEZAR TURNO
-                  </button>
-                </div>
+          {/* HISTORIALES */}
+          {subPestanaVentas === 'historial' && (
+            <div className={styles.seccionHistoriales}>
+              <div className={styles.subSubBarra}>
+                <button className={subPestanaHistorial === 'ventas' ? styles.subSubActive : ''} onClick={() => setSubPestanaHistorial('ventas')}>Historial de Ventas por Arqueo</button>
+                <button className={subPestanaHistorial === 'cierres' ? styles.subSubActive : ''} onClick={() => setSubPestanaHistorial('cierres')}>Historial de Arqueos / Turnos</button>
               </div>
-            ) : (
-              <>
-                {/* TARJETAS DE MÉTRICAS */}
-                <div className={styles.gridMetricasCaja}>
-                  <div className={styles.cardMetrica}>
-                    <span>Base del Turno</span>
-                    <h3>${baseEfectivoJornada.toLocaleString()}</h3>
-                  </div>
-                  <div className={styles.cardMetrica}>
-                    <span>Efectivo del Turno</span>
-                    <h3 style={{ color: '#16a34a' }}>${totalEfectivoHoy.toLocaleString()}</h3>
-                  </div>
-                  <div className={styles.cardMetrica}>
-                    <span>Tarjetas Turno</span>
-                    <h3 style={{ color: '#9333ea' }}>${totalTarjetaHoy.toLocaleString()}</h3>
-                  </div>
-                  <div className={styles.cardMetrica}>
-                    <span>Transferencias Turno</span>
-                    <h3 style={{ color: '#ea580c' }}>${totalTransferenciaHoy.toLocaleString()}</h3>
-                  </div>
-                </div>
 
-                {/* SECCIÓN DE CONTEO Y ARQUEO */}
-                <div className={styles.formArqueoCaja}>
-                  <h3>Ingresar Conteo Físico Real del Turno</h3>
-                  <p style={{ fontSize: '13px', color: '#64748b', marginTop: '-8px', marginBottom: '16px' }}>
-                    Nota: El <strong>Efectivo Esperado en Caja</strong> para este cierre es de{' '}
-                    <strong style={{ color: '#0f172a' }}>
-                      ${(baseEfectivoJornada + totalEfectivoHoy).toLocaleString()}
-                    </strong>{' '}
-                    (Base Inicial ${baseEfectivoJornada.toLocaleString()} + Efectivo del Turno $
-                    {totalEfectivoHoy.toLocaleString()}).
-                  </p>
+              {subPestanaHistorial === 'ventas' ? (
+                <div>
+                  <div style={{ margin: '16px 0', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                    <label style={{ fontWeight: 'bold' }}>Seleccionar Arqueo / Turno para ver detalle:</label>
+                    <select 
+                      className={styles.selectChico} 
+                      style={{ maxWidth: '420px', width: '100%' }} 
+                      value={cierreFiltroSeleccionado} 
+                      onChange={(e) => setCierreFiltroSeleccionado(e.target.value)}
+                    >
+                      <option value="abierta">🟢 Turno Activo (En servicio)</option>
+                      {cierres.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          🔒 Arqueo del {formatearFecha(c.fecha)} — Total: ${c.total_sistema.toLocaleString()}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                  <div className={styles.gridArqueoInputs}>
-                    <div>
-                      <label>💵 Efectivo Físico (Incluyendo Base)</label>
-                      <input
-                        type="number"
-                        placeholder="Monto real en caja"
-                        value={efectivoReal}
-                        onChange={(e) => setEfectivoReal(e.target.value)}
-                      />
-                      {difEfectivo !== null && (
-                        <span className={difEfectivo < 0 ? styles.badgeDiferenciaError : styles.badgeDiferenciaOk}>
-                          {difEfectivo === 0
-                            ? '✅ Cuadre exacto'
-                            : difEfectivo < 0
-                            ? `⚠️ Falta: $${difEfectivo.toLocaleString()}`
-                            : `➕ Sobra: +$${difEfectivo.toLocaleString()}`}
-                        </span>
-                      )}
+                  {/* Resumen dinámico al consultar un arqueo guardado del pasado */}
+                  {cierreFiltroSeleccionado !== 'abierta' && arqueoSeleccionado && (
+                    <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1', marginBottom: '20px' }}>
+                      <h4 style={{ margin: '0 0 10px', color: '#0f172a' }}>
+                        📊 Resumen del Arqueo — {formatearFecha(arqueoSeleccionado.fecha)}
+                      </h4>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', fontSize: '13px' }}>
+                        <div><span>Base Inicial:</span><br/><strong>${(arqueoSeleccionado.base_inicial || 0).toLocaleString()}</strong></div>
+                        <div><span>Total Ventas:</span><br/><strong style={{ color: '#2563eb' }}>${arqueoSeleccionado.total_sistema.toLocaleString()}</strong></div>
+                        <div><span>Efectivo:</span><br/><strong>${arqueoSeleccionado.efectivo_sistema.toLocaleString()}</strong></div>
+                        <div><span>Tarjeta:</span><br/><strong>${arqueoSeleccionado.tarjeta_sistema.toLocaleString()}</strong></div>
+                        <div><span>Transferencia:</span><br/><strong>${arqueoSeleccionado.transferencia_sistema.toLocaleString()}</strong></div>
+                        <div><span>Diferencia Cierre:</span><br/>
+                          <strong style={{ color: (arqueoSeleccionado.diferencia_efectivo + arqueoSeleccionado.diferencia_tarjeta + arqueoSeleccionado.diferencia_transferencia) < 0 ? '#dc2626' : '#16a34a' }}>
+                            ${(arqueoSeleccionado.diferencia_efectivo + arqueoSeleccionado.diferencia_tarjeta + arqueoSeleccionado.diferencia_transferencia).toLocaleString()}
+                          </strong>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <label>💳 Tarjetas Físico</label>
-                      <input
-                        type="number"
-                        placeholder="Monto real tarjetas"
-                        value={tarjetaReal}
-                        onChange={(e) => setTarjetaReal(e.target.value)}
-                      />
-                      {difTarjeta !== null && (
-                        <span className={difTarjeta < 0 ? styles.badgeDiferenciaError : styles.badgeDiferenciaOk}>
-                          {difTarjeta === 0
-                            ? '✅ Cuadre exacto'
-                            : difTarjeta < 0
-                            ? `⚠️ Falta: $${difTarjeta.toLocaleString()}`
-                            : `➕ Sobra: +$${difTarjeta.toLocaleString()}`}
-                        </span>
-                      )}
-                    </div>
-                    <div>
-                      <label>📲 Transferencias Físico</label>
-                      <input
-                        type="number"
-                        placeholder="Monto real transferencias"
-                        value={transferenciaReal}
-                        onChange={(e) => setTransferenciaReal(e.target.value)}
-                      />
-                      {difTransferencia !== null && (
-                        <span
-                          className={difTransferencia < 0 ? styles.badgeDiferenciaError : styles.badgeDiferenciaOk}
-                        >
-                          {difTransferencia === 0
-                            ? '✅ Cuadre exacto'
-                            : difTransferencia < 0
-                            ? `⚠️ Falta: $${difTransferencia.toLocaleString()}`
-                            : `➕ Sobra: +$${difTransferencia.toLocaleString()}`}
-                        </span>
-                      )}
-                    </div>
-                  </div>
+                  )}
 
-                  <button className={styles.btnCierreAccion} onClick={realizarCierreCaja}>
-                    🔒 CERRAR Y GUARDAR ARQUEO DE TURNO
-                  </button>
-                </div>
+                  <h4>Ventas registradas en este arqueo ({ventasFiltradasHistorial.length})</h4>
 
-                {/* VENTAS REGISTRADAS EN EL TURNO ACTIVO */}
-                <div style={{ marginTop: '28px' }}>
-                  <h3>Ventas del Turno Activo ({ventasJornadaActual.length})</h3>
                   <div className={styles.tablaResponsiveContainer}>
                     <table className={styles.tablaApp}>
                       <thead>
-                        <tr>
-                          <th>Hora</th>
-                          <th>Cliente</th>
-                          <th>Método</th>
-                          <th>Total</th>
-                          <th>Acción</th>
-                        </tr>
+                        <tr><th>Hora/Fecha</th><th>Cliente</th><th>Método</th><th>Total</th><th>Acciones</th></tr>
                       </thead>
                       <tbody>
-                        {ventasJornadaActual.length === 0 ? (
+                        {ventasFiltradasHistorial.length === 0 ? (
                           <tr>
-                            <td colSpan={5} style={{ textAlign: 'center', color: '#94a3b8' }}>
-                              No hay ventas registradas en el turno actual.
+                            <td colSpan={5} style={{ textAlign: 'center', color: '#94a3b8', padding: '20px' }}>
+                              No se encontraron ventas asociadas a este arqueo seleccionado.
                             </td>
                           </tr>
                         ) : (
-                          ventasJornadaActual.map((v) => (
+                          ventasFiltradasHistorial.map((v) => (
                             <tr key={v.id}>
                               <td>{formatearFecha(v.created_at)}</td>
                               <td>{v.cliente}</td>
                               <td>{v.metodo_pago}</td>
+                              <td><strong>${v.total.toLocaleString()}</strong></td>
                               <td>
-                                <strong>${v.total.toLocaleString()}</strong>
-                              </td>
-                              <td>
-                                <button onClick={() => setVentaSeleccionada(v)} className={styles.btnVerConBorde}>
-                                  👁️ Detalle
-                                </button>
+                                <button onClick={() => setVentaSeleccionada(v)} className={styles.btnVerConBorde}>👁️ Ver Ticket</button>
+                                <button onClick={() => eliminarVenta(v.id)} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>🗑️ Eliminar</button>
                               </td>
                             </tr>
                           ))
@@ -870,378 +1110,411 @@ export default function Home() {
                     </table>
                   </div>
                 </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* ==================================================================== */}
-        {/* VISTA 3: HISTORIALES DE VENTAS Y ARQUEOS */}
-        {/* ==================================================================== */}
-        {pestanaPrincipal === 'ventas' && subPestanaVentas === 'historiales' && (
-          <div className={styles.seccionHistoriales}>
-            <div className={styles.subSubBarra}>
-              <button
-                className={subPestanaHistoriales === 'ventas' ? styles.btnSubSubActivo : styles.btnSubSub}
-                onClick={() => setSubPestanaHistoriales('ventas')}
-              >
-                Historial de Ventas por Arqueo
-              </button>
-              <button
-                className={subPestanaHistoriales === 'arqueos' ? styles.btnSubSubActivo : styles.btnSubSub}
-                onClick={() => setSubPestanaHistoriales('arqueos')}
-              >
-                Historial de Arqueos / Turnos
-              </button>
-            </div>
-
-            {subPestanaHistoriales === 'ventas' && (
-              <div>
-                <div className={styles.selectorArqueoFiltro}>
-                  <label>
-                    <strong>Seleccionar Arqueo / Turno para ver detalle:</strong>
-                  </label>
-                  <select
-                    value={cierreFiltroSeleccionado}
-                    onChange={(e) => setCierreFiltroSeleccionado(e.target.value)}
-                  >
-                    <option value="abierta">🔓 Turno Actual Activo (En Curso)</option>
-                    {cierres.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        🔒 Arqueo del {new Date(c.fecha).toLocaleDateString()} - Total: ${c.total_ventas.toLocaleString()}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* TABLA DE VENTAS FILTRADAS */}
+              ) : (
                 <div className={styles.tablaResponsiveContainer}>
-                  <h4>Ventas registradas en este arqueo ({ventasFiltradasHistorial.length})</h4>
                   <table className={styles.tablaApp}>
                     <thead>
-                      <tr>
-                        <th>Hora/Fecha</th>
-                        <th>Cliente</th>
-                        <th>Método</th>
-                        <th>Total</th>
-                        <th>Acciones</th>
-                      </tr>
+                      <tr><th>Fecha Arqueo</th><th>Base</th><th>Total Sistema</th><th>Efectivo Real</th><th>Diferencia</th><th>Acciones</th></tr>
                     </thead>
                     <tbody>
-                      {ventasFiltradasHistorial.length === 0 ? (
-                        <tr>
-                          <td colSpan={5} style={{ textAlign: 'center', color: '#94a3b8' }}>
-                            No se encontraron ventas asociadas a este arqueo seleccionado.
+                      {cierres.map((c) => (
+                        <tr key={c.id}>
+                          <td>{formatearFecha(c.fecha)}</td>
+                          <td>${c.base_inicial?.toLocaleString() || 0}</td>
+                          <td>${c.total_sistema.toLocaleString()}</td>
+                          <td>${c.efectivo_real.toLocaleString()}</td>
+                          <td style={{ color: c.diferencia_efectivo < 0 ? '#dc2626' : '#16a34a', fontWeight: 'bold' }}>
+                            ${(c.diferencia_efectivo + c.diferencia_tarjeta + c.diferencia_transferencia).toLocaleString()}
+                          </td>
+                          <td>
+                            <button onClick={() => eliminarCierre(c.id)} className={styles.btnEliminarConBorde}>🗑️ Eliminar Arqueo</button>
                           </td>
                         </tr>
-                      ) : (
-                        ventasFiltradasHistorial.map((v) => (
-                          <tr key={v.id}>
-                            <td>
-                              {new Date(v.created_at).toLocaleDateString()} {formatearFecha(v.created_at)}
-                            </td>
-                            <td>{v.cliente}</td>
-                            <td>{v.metodo_pago}</td>
-                            <td>
-                              <strong>${v.total.toLocaleString()}</strong>
-                            </td>
-                            <td>
-                              <button className={styles.btnVerConBorde} onClick={() => setVentaSeleccionada(v)}>
-                                📄 Ticket / Detalle
-                              </button>
-                            </td>
-                          </tr>
-                        ))
-                      )}
+                      ))}
                     </tbody>
                   </table>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
-            {subPestanaHistoriales === 'arqueos' && (
+      {/* MÓDULO PRODUCCIÓN */}
+      {modulo === 'produccion' && (
+        <div>
+          <div className={styles.subBarra}>
+            <button className={subPestanaProduccion === 'inventario' ? styles.subActive : ''} onClick={() => setSubPestanaProduccion('inventario')}>📦 Inventario Insumos</button>
+            <button className={subPestanaProduccion === 'recetas' ? styles.subActive : ''} onClick={() => setSubPestanaProduccion('recetas')}>🍳 Recetas y Escandallos</button>
+            <button className={subPestanaProduccion === 'productos' ? styles.subActive : ''} onClick={() => setSubPestanaProduccion('productos')}>🍔 Menú y Productos</button>
+          </div>
+
+          {/* INVENTARIO */}
+          {subPestanaProduccion === 'inventario' && (
+            <div className={styles.paddingBloque}>
+              <form onSubmit={guardarInsumo} className={styles.formStandard}>
+                <h3>➕ Registrar Materia Prima</h3>
+                <div className={styles.grid3Campos}>
+                  <input type="text" placeholder="Nombre insumo" value={nuevoInsumoNombre} onChange={(e) => setNuevoInsumoNombre(e.target.value)} required />
+                  <select value={nuevoInsumoUnidad} onChange={(e) => setNuevoInsumoUnidad(e.target.value)}>
+                    <option value="g">Gramos (g)</option><option value="kg">Kilos (kg)</option><option value="ml">Ml</option><option value="unidades">Unidades</option>
+                  </select>
+                  <input type="number" placeholder="Stock inicial" value={nuevoInsumoStock} onChange={(e) => setNuevoInsumoStock(e.target.value)} required />
+                </div>
+                <button type="submit" className={styles.btnAgregarConBorde}>Guardar Insumo</button>
+              </form>
+
               <div className={styles.tablaResponsiveContainer}>
-                <h3>Registro de Cierres de Caja Guardados</h3>
                 <table className={styles.tablaApp}>
                   <thead>
-                    <tr>
-                      <th>Fecha / Hora</th>
-                      <th>Base</th>
-                      <th>Ventas Sistema</th>
-                      <th>Total Real</th>
-                      <th>Diferencia</th>
-                    </tr>
+                    <tr><th>Insumo</th><th>Stock Teórico</th><th>Conteo Físico Real</th><th>Acción</th></tr>
                   </thead>
                   <tbody>
-                    {cierres.map((c) => (
-                      <tr key={c.id}>
-                        <td>{new Date(c.fecha).toLocaleString()}</td>
-                        <td>${c.base_inicial.toLocaleString()}</td>
-                        <td>${c.total_ventas.toLocaleString()}</td>
+                    {insumos.map((i) => (
+                      <tr key={i.id}>
+                        <td><strong>{i.nombre}</strong></td>
+                        <td>{i.stock_actual} {i.unidad}</td>
                         <td>
-                          ${(c.efectivo_real + c.tarjeta_real + c.transferencia_real).toLocaleString()}
+                          <input type="number" placeholder="Real" className={styles.cantInput} value={conteosFisicos[i.id] || ''} onChange={(e) => setConteosFisicos({ ...conteosFisicos, [i.id]: e.target.value })} />
                         </td>
-                        <td style={{ color: c.diferencia_total < 0 ? '#dc2626' : '#16a34a', fontWeight: 'bold' }}>
-                          ${c.diferencia_total.toLocaleString()}
+                        <td><button onClick={() => actualizarStockFisico(i.id)} className={styles.btnVerConBorde}>Rectificar</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* RECETAS */}
+          {subPestanaProduccion === 'recetas' && (
+            <div className={styles.paddingBloque}>
+              <form onSubmit={guardarRecetaMultiple} className={styles.formStandard}>
+                <h3>🍳 Crear / Vincular Receta Múltiple</h3>
+
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>Producto del Menú:</label>
+                  <select className={styles.selectChico} style={{ maxWidth: '350px' }} value={prodRecetaSel} onChange={(e) => setProdRecetaSel(e.target.value)} required>
+                    <option value="">-- Seleccionar Producto --</option>
+                    {productos.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                  </select>
+                </div>
+
+                <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>Insumos que requiere:</label>
+                {lineasReceta.map((linea, index) => (
+                  <div key={index} className={styles.filaPedido} style={{ marginBottom: '8px' }}>
+                    <select className={styles.selectChico} value={linea.insumo_id} onChange={(e) => {
+                      const n = [...lineasReceta];
+                      n[index].insumo_id = e.target.value;
+                      setLineasReceta(n);
+                    }}>
+                      <option value="">-- Insumo --</option>
+                      {insumos.map((i) => <option key={i.id} value={i.id}>{i.nombre} ({i.unidad})</option>)}
+                    </select>
+
+                    <input type="number" step="any" placeholder="Cantidad por venta" className={styles.cantInput} value={linea.cantidad_requerida} onChange={(e) => {
+                      const n = [...lineasReceta];
+                      n[index].cantidad_requerida = e.target.value;
+                      setLineasReceta(n);
+                    }} />
+
+                    {lineasReceta.length > 1 && (
+                      <button type="button" onClick={() => setLineasReceta(lineasReceta.filter((_, idx) => idx !== index))} className={styles.btnTrash}>✕</button>
+                    )}
+                  </div>
+                ))}
+
+                <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+                  <button type="button" className={styles.btnAgregarLineaConBorde} onClick={() => setLineasReceta([...lineasReceta, { insumo_id: '', cantidad_requerida: '' }])}>
+                    ＋ Agregar otro insumo
+                  </button>
+                  <button type="submit" className={styles.btnAgregarConBorde}>💾 Guardar Receta Completa</button>
+                </div>
+              </form>
+
+              <h3 style={{ marginTop: '28px' }}>📋 Recetas Registradas</h3>
+              <div className={styles.tablaResponsiveContainer}>
+                <table className={styles.tablaApp}>
+                  <thead>
+                    <tr><th>Producto</th><th>Insumo Consumido</th><th>Cantidad Requerida</th><th>Acciones</th></tr>
+                  </thead>
+                  <tbody>
+                    {recetas.map((r) => {
+                      const prod = productos.find((p) => p.id === r.producto_id);
+                      const ins = insumos.find((i) => i.id === r.insumo_id);
+
+                      return (
+                        <tr key={r.id}>
+                          <td><strong>{prod ? prod.nombre : 'Producto no encontrado'}</strong></td>
+                          <td>{ins ? `${ins.nombre} (${ins.unidad})` : 'Insumo no encontrado'}</td>
+                          <td>
+                            {recetaEditandoId === r.id ? (
+                              <input
+                                type="number"
+                                step="any"
+                                className={styles.cantInput}
+                                value={cantEditandoVal}
+                                onChange={(e) => setCantEditandoVal(e.target.value)}
+                              />
+                            ) : (
+                              `${r.cantidad_requerida} ${ins ? ins.unidad : ''}`
+                            )}
+                          </td>
+                          <td>
+                            {recetaEditandoId === r.id ? (
+                              <button onClick={() => editarCantidadReceta(r.id)} className={styles.btnAgregarConBorde}>💾 Guardar</button>
+                            ) : (
+                              <button onClick={() => { setRecetaEditandoId(r.id); setCantEditandoVal(r.cantidad_requerida.toString()); }} className={styles.btnVerConBorde}>✏️ Editar</button>
+                            )}
+                            <button onClick={() => eliminarRecetaItem(r.id)} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>🗑️</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* PRODUCTOS */}
+          {subPestanaProduccion === 'productos' && (
+            <div className={styles.paddingBloque}>
+              <form onSubmit={guardarProducto} className={styles.formStandard}>
+                <h3>{productoEditando ? '✏️ Editar Producto' : '➕ Nuevo Producto del Menú'}</h3>
+                <div className={styles.grid2Campos}>
+                  <input type="text" placeholder="Nombre" value={nuevoNombre} onChange={(e) => setNuevoNombre(e.target.value)} required />
+                  <input type="number" placeholder="Precio ($)" value={nuevoPrecio} onChange={(e) => setNuevoPrecio(e.target.value)} required />
+                </div>
+                <button type="submit" className={styles.btnAgregarConBorde}>{productoEditando ? 'Guardar Cambios' : 'Agregar Al Menú'}</button>
+              </form>
+
+              <div className={styles.tablaResponsiveContainer}>
+                <table className={styles.tablaApp}>
+                  <thead><tr><th>Producto</th><th>Precio</th><th>Acciones</th></tr></thead>
+                  <tbody>
+                    {productos.map((p) => (
+                      <tr key={p.id}>
+                        <td>{p.nombre}</td>
+                        <td>${p.precio.toLocaleString()}</td>
+                        <td>
+                          <button onClick={() => { setProductoEditando(p); setNuevoNombre(p.nombre); setNuevoPrecio(p.precio.toString()); }} className={styles.btnVerConBorde}>✏️ Editar</button>
+                          <button onClick={async () => { await supabase.from('productos').delete().eq('id', p.id); if (usuario) obtenerProductos(usuario.id); }} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>🗑️ Eliminar</button>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          )}
+        </div>
+      )}
 
-        {/* ==================================================================== */}
-        {/* VISTA 4: PANTALLA DE COCINA (KITCHEN DISPLAY SYSTEM) */}
-        {/* ==================================================================== */}
-        {pestanaPrincipal === 'produccion' && subPestanaProduccion === 'cocina' && (
-          <div className={styles.gridCocina}>
-            {pedidos.map((ped) => (
-              <div key={ped.id} className={styles.cardCocina}>
-                <div className={styles.headerCardCocina}>
-                  <h3>{ped.mesa}</h3>
-                  <span className={styles.timeCocina}>{formatearFecha(ped.created_at)}</span>
-                </div>
-                <p>
-                  <strong>Cliente:</strong> {ped.cliente}
-                </p>
-                <div className={styles.listaItemsCocina}>
-                  {ped.items.map((it, idx) => (
-                    <div key={idx} className={styles.itemCocina}>
-                      <strong>
-                        {it.cantidad}x {it.producto.nombre}
-                      </strong>
-                      {it.notas && <p className={styles.notasCocina}>⚠️ Nota: {it.notas}</p>}
-                      {it.agregados && (
-                        <div className={styles.agregadosCocina}>
-                          {it.agregados.map((a) => (
-                            <span key={a.ingrediente_id}>
-                              + {a.cantidad} {a.nombre}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                <div className={styles.actionsCocina}>
-                  {ped.estado === 'Pendiente' && (
-                    <button
-                      className={styles.btnPreparar}
-                      onClick={() => cambiarEstadoPedido(ped.id, 'En Preparación')}
-                    >
-                      👨‍🍳 Empezar Preparación
-                    </button>
-                  )}
-                  {ped.estado === 'En Preparación' && (
-                    <button className={styles.btnServir} onClick={() => cambiarEstadoPedido(ped.id, 'Servido')}>
-                      ✅ Marcar Listo / Servido
-                    </button>
-                  )}
-                </div>
+      {/* MODAL TICKET DE COMANDA PARA COCINA */}
+      {comandaImprimir && (
+        <div className={styles.overlayModal} onClick={() => setComandaImprimir(null)}>
+          <div className={styles.modalContentTicket} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.ticketImpresionArea}>
+              <div style={{ textAlign: 'center', borderBottom: '2px dashed #0f172a', paddingBottom: '8px', marginBottom: '8px' }}>
+                <h2 style={{ margin: 0, fontSize: '20px' }}>👨‍🍳 PEDIDO COCINA</h2>
+                <h3 style={{ margin: '4px 0 0', fontSize: '18px' }}>COMANDA #{comandaImprimir.numero}</h3>
+                <p style={{ margin: '2px 0', fontSize: '12px' }}><strong>MESA:</strong> {comandaImprimir.mesa}</p>
+                <p style={{ margin: '2px 0', fontSize: '12px', color: '#475569' }}>Hora Entrada: {comandaImprimir.hora}</p>
               </div>
-            ))}
-          </div>
-        )}
 
-        {/* ==================================================================== */}
-        {/* VISTA 5: INVENTARIO DE INGREDIENTES */}
-        {/* ==================================================================== */}
-        {pestanaPrincipal === 'produccion' && subPestanaProduccion === 'inventario' && (
-          <div className={styles.seccionInventario}>
-            <h2>Gestión de Stock e Ingredientes</h2>
-            <div className={styles.tablaResponsiveContainer}>
-              <table className={styles.tablaApp}>
+              <div style={{ fontSize: '12px', marginBottom: '8px' }}>
+                <p style={{ margin: '2px 0' }}><strong>Cliente:</strong> {comandaImprimir.cliente}</p>
+              </div>
+
+              <table className={styles.tablaTicketPreview}>
                 <thead>
-                  <tr>
-                    <th>Ingrediente</th>
-                    <th>Unidad</th>
-                    <th>Stock Actual</th>
-                    <th>Mínimo Alerta</th>
-                    <th>Costo/Unidad</th>
-                    <th>Estado</th>
-                  </tr>
+                  <tr><th>Cant.</th><th>Producto</th></tr>
                 </thead>
                 <tbody>
-                  {ingredientes.map((ing) => (
-                    <tr key={ing.id}>
-                      <td>
-                        <strong>{ing.nombre}</strong>
-                      </td>
-                      <td>{ing.unidad}</td>
-                      <td>{ing.stock_actual}</td>
-                      <td>{ing.minimo_alerta}</td>
-                      <td>${ing.costo_unidad.toLocaleString()}</td>
-                      <td>
-                        {ing.stock_actual <= ing.minimo_alerta ? (
-                          <span className={styles.badgeError}>⚠️ Stock Bajo</span>
-                        ) : (
-                          <span className={styles.badgeOk}>✅ Normal</span>
-                        )}
-                      </td>
+                  {comandaImprimir.items.map((item, idx) => (
+                    <tr key={idx}>
+                      <td style={{ fontWeight: 'bold', fontSize: '15px' }}>{item.cantidad}x</td>
+                      <td style={{ fontSize: '14px', fontWeight: 'bold' }}>{item.nombre}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
-          </div>
-        )}
-      </main>
 
-      {/* ==================================================================== */}
-      {/* MODAL 1: OPCIONES DE PRODUCTO / AGREGADOS Y NOTAS */}
-      {/* ==================================================================== */}
-      {productoEdicion && (
-        <div className={styles.modalBackdrop}>
-          <div className={styles.modalContenido}>
-            <h3>Personalizar {productoEdicion.nombre}</h3>
-            <p>Precio base: ${productoEdicion.precio.toLocaleString()}</p>
-
-            <div className={styles.campoModal}>
-              <label>Cantidad:</label>
-              <div className={styles.rowCantidadModal}>
-                <button onClick={() => setCantidadEdicion((c) => Math.max(1, c - 1))}>-</button>
-                <span>{cantidadEdicion}</span>
-                <button onClick={() => setCantidadEdicion((c) => c + 1)}>+</button>
-              </div>
+              {comandaImprimir.comentario && (
+                <div style={{ marginTop: '12px', background: '#f1f5f9', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 'bold', display: 'block', color: '#0f172a' }}>📌 OBSERVACIONES:</span>
+                  <p style={{ margin: '2px 0 0', fontSize: '13px', fontWeight: 'bold', color: '#b91c1c' }}>
+                    {comandaImprimir.comentario}
+                  </p>
+                </div>
+              )}
             </div>
 
-            <div className={styles.campoModal}>
-              <label>Notas especiales para cocina:</label>
-              <input
-                type="text"
-                placeholder="Ej: Sin cebolla, extra salsa..."
-                value={notasEdicion}
-                onChange={(e) => setNotasEdicion(e.target.value)}
-              />
-            </div>
-
-            {/* SECCIÓN DE AGREGADOS */}
-            <div className={styles.campoModal}>
-              <label>Adicionales / Agregados:</label>
-              <div className={styles.listaAgregadosSeleccion}>
-                {ingredientes.slice(0, 6).map((ing) => (
-                  <div key={ing.id} className={styles.rowAgregadoItem}>
-                    <span>{ing.nombre} (+$1,500)</span>
-                    <input
-                      type="number"
-                      min="0"
-                      value={agregadosEdicion[ing.id] || 0}
-                      onChange={(e) =>
-                        setAgregadosEdicion({ ...agregadosEdicion, [ing.id]: parseInt(e.target.value) || 0 })
-                      }
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className={styles.modalAcciones}>
-              <button className={styles.btnCancelar} onClick={() => setProductoEdicion(null)}>
-                Cancelar
+            <div className={styles.modalActions}>
+              <button onClick={() => { window.print(); setComandaImprimir(null); }} className={styles.btnCobrar} style={{ flex: 1 }}>
+                🖨️ Imprimir Comanda
               </button>
-              <button className={styles.btnAceptar} onClick={agregarAlCarrito}>
-                Agregar al Pedido
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ==================================================================== */}
-      {/* MODAL 2: PROCESAR PAGO Y COBRO DE VENTA */}
-      {/* ==================================================================== */}
-      {pedidoACobrar && (
-        <div className={styles.modalBackdrop}>
-          <div className={styles.modalContenido}>
-            <h3>Cobrar {pedidoACobrar.mesa}</h3>
-            <p>Cliente: {pedidoACobrar.cliente}</p>
-            <h2>Total a Pagar: ${pedidoACobrar.total.toLocaleString()}</h2>
-
-            <div className={styles.campoModal}>
-              <label>Método de Pago:</label>
-              <select value={metodoPago} onChange={(e) => setMetodoPago(e.target.value)}>
-                <option value="Efectivo">💵 Efectivo</option>
-                <option value="Tarjeta">💳 Tarjeta</option>
-                <option value="Transferencia">📲 Transferencia (Bancolombia/Nequi)</option>
-              </select>
-            </div>
-
-            {metodoPago === 'Efectivo' && (
-              <div className={styles.campoModal}>
-                <label>Efectivo Recibido del Cliente:</label>
-                <input
-                  type="number"
-                  value={montoEfectivoCliente}
-                  onChange={(e) => setMontoEfectivoCliente(e.target.value)}
-                />
-                {parseFloat(montoEfectivoCliente) >= pedidoACobrar.total && (
-                  <div className={styles.boxCambioCalculado}>
-                    <strong>
-                      Devolver / Cambio: ${(parseFloat(montoEfectivoCliente) - pedidoACobrar.total).toLocaleString()}
-                    </strong>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className={styles.modalAcciones}>
-              <button className={styles.btnCancelar} onClick={() => setPedidoACobrar(null)}>
-                Cancelar
-              </button>
-              <button className={styles.btnAceptar} onClick={procesarCobroVenta}>
-                ✅ CONFIRMAR Y REGISTRAR VENTA
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ==================================================================== */}
-      {/* MODAL 3: VER DETALLE / TICKET DE VENTA SELECCIONADA */}
-      {/* ==================================================================== */}
-      {ventaSeleccionada && (
-        <div className={styles.modalBackdrop}>
-          <div className={styles.modalContenido}>
-            <div ref={ticketRef} className={styles.ticketBox}>
-              <h3 style={{ textAlign: 'center' }}>🥙 Arepa Secreta</h3>
-              <p style={{ textAlign: 'center', fontSize: '12px' }}>
-                Fecha: {new Date(ventaSeleccionada.created_at).toLocaleString()}
-              </p>
-              <hr />
-              <p>
-                <strong>Cliente:</strong> {ventaSeleccionada.cliente}
-              </p>
-              <p>
-                <strong>Método de Pago:</strong> {ventaSeleccionada.metodo_pago}
-              </p>
-              <hr />
-              <div>
-                {ventaSeleccionada.items &&
-                  ventaSeleccionada.items.map((it, idx) => (
-                    <div key={idx} className={styles.rowTicketItem}>
-                      <span>
-                        {it.cantidad}x {it.producto.nombre}
-                      </span>
-                      <span>${calcularSubtotalItem(it).toLocaleString()}</span>
-                    </div>
-                  ))}
-              </div>
-              <hr />
-              <div className={styles.rowTicketTotal}>
-                <strong>TOTAL PAGADO:</strong>
-                <strong>${ventaSeleccionada.total.toLocaleString()}</strong>
-              </div>
-            </div>
-
-            <div className={styles.modalAcciones}>
-              <button className={styles.btnCancelar} onClick={() => setVentaSeleccionada(null)}>
+              <button onClick={() => setComandaImprimir(null)} className={styles.btnAgregarConBorde}>
                 Cerrar
               </button>
-              <button className={styles.btnAceptar} onClick={() => window.print()}>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL COBRO CON ENCABEZADO DE FACTURA COMPLETO */}
+      {mostrarModalCobro && mesaSeleccionada && (
+        <div className={styles.overlayModal} onClick={() => setMostrarModalCobro(false)}>
+          <div className={styles.modalCobroGrandote} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.columnaPreviewFactura}>
+              <div style={{ textAlign: 'center', borderBottom: '2px dashed #cbd5e1', paddingBottom: '8px', marginBottom: '8px' }}>
+                <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>{perfil?.nombre_local || 'Mi Negocio'}</h3>
+                <p style={{ margin: '2px 0', fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>Propietario: {perfil?.nombre_persona || 'Administrador'}</p>
+                <p style={{ margin: '2px 0', fontSize: '12px', color: '#475569' }}>NIT / CC: {perfil?.documento || 'N/A'}</p>
+                <p style={{ margin: '2px 0', fontSize: '12px', color: '#475569' }}>Dir: {perfil?.direccion || 'N/A'} | Tel: {perfil?.telefono || 'N/A'}</p>
+              </div>
+
+              <p style={{ fontSize: '13px', margin: '4px 0' }}><strong>Mesa:</strong> {mesaSeleccionada.nombre}</p>
+              <p style={{ fontSize: '13px', margin: '4px 0' }}><strong>Cliente:</strong> {clienteNombreMesa || 'Consumidor Final'}</p>
+
+              <table className={styles.tablaTicketPreview}>
+                <thead>
+                  <tr><th>Cant.</th><th>Producto</th><th>P.Unit</th><th>Subtotal</th></tr>
+                </thead>
+                <tbody>
+                  {lineasMesa
+                    .filter((f) => f.productoId !== '')
+                    .map((f) => {
+                      const prod = productos.find((p) => p.id === f.productoId);
+                      return (
+                        <tr key={f.id}>
+                          <td>{f.cantidad}</td>
+                          <td>{prod?.nombre}</td>
+                          <td>${prod?.precio.toLocaleString()}</td>
+                          <td>${((prod?.precio || 0) * f.cantidad).toLocaleString()}</td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '18px', fontWeight: 'bold', borderTop: '2px dashed #0f172a', paddingTop: '8px', marginTop: '12px' }}>
+                <span>TOTAL A PAGAR:</span>
+                <strong style={{ color: '#16a34a' }}>${totalCalculadoMesa.toLocaleString()}</strong>
+              </div>
+            </div>
+
+            <div className={styles.columnaOpcionesCobro}>
+              <h3>💳 Opciones de Pago</h3>
+
+              <div style={{ margin: '12px 0' }}>
+                <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Método de Pago:</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {(['Efectivo', 'Tarjeta', 'Transferencia'] as const).map((m) => (
+                    <button
+                      key={m}
+                      className={metodoPago === m ? styles.metodoSel : ''}
+                      onClick={() => setMetodoPago(m)}
+                      style={{ flex: 1, padding: '10px', border: '1.5px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+                    >
+                      {m === 'Efectivo' && '💵 '}
+                      {m === 'Tarjeta' && '💳 '}
+                      {m === 'Transferencia' && '📲 '}
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {metodoPago === 'Efectivo' && (
+                <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1.5px solid #cbd5e1', margin: '12px 0' }}>
+                  <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>Monto Pagado por el Cliente ($):</label>
+                  <input
+                    type="number"
+                    placeholder="Ej: 50000"
+                    value={montoPagaCon}
+                    onChange={(e) => setMontoPagaCon(e.target.value)}
+                    className={styles.inputChico}
+                    style={{ fontSize: '18px', fontWeight: 'bold' }}
+                  />
+
+                  {montoPagaCon !== '' && (
+                    <div style={{ marginTop: '10px' }}>
+                      {cambioEfectivo >= 0 ? (
+                        <div style={{ color: '#15803d', fontWeight: 'bold', fontSize: '16px', background: '#dcfce7', padding: '8px', borderRadius: '6px' }}>
+                          💵 Cambio a entregar: ${cambioEfectivo.toLocaleString()}
+                        </div>
+                      ) : (
+                        <div style={{ color: '#b91c1c', fontWeight: 'bold', fontSize: '14px', background: '#fef2f2', padding: '8px', borderRadius: '6px' }}>
+                          ⚠️ Falta dinero: ${Math.abs(cambioEfectivo).toLocaleString()}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <button onClick={finalizarYCobrarVenta} className={styles.btnCobrar} style={{ width: '100%', fontSize: '16px' }}>
+                  ✅ FINALIZAR Y REGISTRAR VENTA
+                </button>
+                <button onClick={() => setMostrarModalCobro(false)} className={styles.btnEliminarConBorde} style={{ width: '100%' }}>
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL TICKET CONFIRMADO PARA IMPRESIÓN */}
+      {(ventaConfirmadaTicket || ventaSeleccionada) && (
+        <div className={styles.overlayModal} onClick={() => { setVentaConfirmadaTicket(null); setVentaSeleccionada(null); }}>
+          <div className={styles.modalContentTicket} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.ticketImpresionArea}>
+              <div style={{ textAlign: 'center', borderBottom: '2px dashed #0f172a', paddingBottom: '8px', marginBottom: '8px' }}>
+                <h2 style={{ margin: 0, fontSize: '20px' }}>{perfil?.nombre_local || 'Mi Negocio'}</h2>
+                <p style={{ margin: '2px 0', fontSize: '12px', fontWeight: 'bold' }}>Propietario: {perfil?.nombre_persona || 'Administrador'}</p>
+                <p style={{ margin: '2px 0', fontSize: '12px' }}>NIT / CC: {perfil?.documento || 'N/A'}</p>
+                <p style={{ margin: '2px 0', fontSize: '12px' }}>Dir: {perfil?.direccion || 'N/A'} | Tel: {perfil?.telefono || 'N/A'}</p>
+                <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#64748b' }}>{formatearFecha((ventaConfirmadaTicket || ventaSeleccionada)!.created_at)}</p>
+              </div>
+
+              <div style={{ fontSize: '12px', marginBottom: '8px' }}>
+                <p style={{ margin: '2px 0' }}><strong>Ticket #:</strong> {(ventaConfirmadaTicket || ventaSeleccionada)!.id}</p>
+                <p style={{ margin: '2px 0' }}><strong>Cliente:</strong> {(ventaConfirmadaTicket || ventaSeleccionada)!.cliente}</p>
+                <p style={{ margin: '2px 0' }}><strong>Método de Pago:</strong> {(ventaConfirmadaTicket || ventaSeleccionada)!.metodo_pago}</p>
+              </div>
+
+              <table className={styles.tablaTicketPreview}>
+                <thead>
+                  <tr><th>Cant.</th><th>Producto</th><th>P.Unit</th><th>Subtotal</th></tr>
+                </thead>
+                <tbody>
+                  {(ventaConfirmadaTicket || ventaSeleccionada)!.productos.map((item, idx) => (
+                    <tr key={idx}>
+                      <td>{item.cantidad}</td>
+                      <td>{item.nombre}</td>
+                      <td>${item.precioUnitario?.toLocaleString()}</td>
+                      <td>${item.subtotal?.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '16px', fontWeight: 'bold', borderTop: '2px dashed #0f172a', paddingTop: '8px', marginTop: '10px' }}>
+                <span>TOTAL:</span>
+                <span>${(ventaConfirmadaTicket || ventaSeleccionada)!.total.toLocaleString()}</span>
+              </div>
+            </div>
+
+            <div className={styles.modalActions}>
+              <button onClick={() => { window.print(); setVentaConfirmadaTicket(null); setVentaSeleccionada(null); }} className={styles.btnCobrar} style={{ flex: 1 }}>
                 🖨️ Imprimir Ticket
+              </button>
+              <button onClick={() => { setVentaConfirmadaTicket(null); setVentaSeleccionada(null); }} className={styles.btnAgregarConBorde}>
+                Cerrar
               </button>
             </div>
           </div>
