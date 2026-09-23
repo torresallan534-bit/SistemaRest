@@ -1,27 +1,30 @@
 /* CONFIGURACIÓN GENERAL */
 .contenedorApp {
   font-family: system-ui, -apple-system, sans-serif;
-  background-color: #f8fafc;
+  background: linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
   min-height: 100vh;
   color: #0f172a;
 }
 
 /* NAVEGACIÓN PRINCIPAL */
 .barrasNavegacion {
-  background: #0f172a;
+  background: linear-gradient(135deg, #0f172a 0%, #111827 35%, #1e293b 100%);
   color: white;
-  padding: 12px 24px;
+  padding: 14px 24px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
-  border-bottom: 3px solid #2563eb;
+  border-bottom: 3px solid rgba(96, 165, 250, 0.8);
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.18);
 }
 
 .brandTitle {
   font-size: 20px;
   font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
 .botonesModulo {
@@ -56,34 +59,38 @@
 /* SUB-BARRAS DE NAVEGACIÓN */
 .subBarra, .subSubBarra {
   display: flex;
-  background: white;
-  border-bottom: 2px solid #cbd5e1;
-  padding: 8px 24px;
+  background: rgba(255, 255, 255, 0.95);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.55);
+  padding: 12px 24px;
   gap: 12px;
   overflow-x: auto;
+  backdrop-filter: blur(10px);
 }
 
 .subBarra button, .subSubBarra button {
   background: #f1f5f9;
   border: 1.5px solid #cbd5e1;
-  padding: 8px 14px;
-  font-weight: 600;
+  padding: 10px 15px;
+  font-weight: 700;
   color: #475569;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: 10px;
   white-space: nowrap;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
 .subBarra button:hover, .subSubBarra button:hover {
   background: #e2e8f0;
   border-color: #94a3b8;
+  transform: translateY(-1px);
 }
 
 .subActive, .subSubActive {
-  background: #2563eb !important;
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
   color: white !important;
   border: 1.5px solid #1d4ed8 !important;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.25) !important;
 }
 
 /* LAYOUT DE 3 COLUMNAS (VENTAS) */
@@ -102,20 +109,20 @@
 
 /* WIDGET ARQUEO IZQUIERDO */
 .widgetArqueoIzquierdo {
-  background: white;
-  border: 2px solid #cbd5e1;
-  border-radius: 12px;
-  padding: 16px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  border-radius: 16px;
+  padding: 18px;
   height: fit-content;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.06);
 }
 
 .cardArqueoHeader {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 2px solid #e2e8f0;
-  padding-bottom: 10px;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 12px;
   margin-bottom: 12px;
 }
 
@@ -151,29 +158,31 @@
 }
 
 .btnApertura {
-  background: #16a34a;
+  background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
   color: white;
-  border: 2px solid #15803d;
+  border: 2px solid #166534;
   padding: 10px;
-  border-radius: 8px;
-  font-weight: bold;
+  border-radius: 10px;
+  font-weight: 800;
   cursor: pointer;
   width: 100%;
-  transition: background 0.2s;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 12px 18px rgba(22, 163, 74, 0.18);
 }
 
 .btnApertura:hover {
-  background: #15803d;
+  transform: translateY(-1px);
+  box-shadow: 0 14px 22px rgba(22, 163, 74, 0.24);
 }
 
 .resumenArqueoBox {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  background: #f8fafc;
-  border: 1.5px solid #e2e8f0;
-  padding: 12px;
-  border-radius: 8px;
+  gap: 10px;
+  background: linear-gradient(180deg, #f8fafc 0%, #edf6ff 100%);
+  border: 1px solid #dfeafc;
+  padding: 14px;
+  border-radius: 12px;
 }
 
 .filaResumen {
@@ -181,14 +190,15 @@
   justify-content: space-between;
   font-size: 13px;
   color: #475569;
+  padding: 4px 0;
 }
 
 .filaResumenTotal {
   display: flex;
   justify-content: space-between;
   font-size: 15px;
-  font-weight: bold;
-  border-top: 2px dashed #cbd5e1;
+  font-weight: 800;
+  border-top: 2px dashed #dbeafe;
   padding-top: 8px;
   margin-top: 4px;
   color: #0f172a;
@@ -196,11 +206,11 @@
 
 /* SECCIÓN Y RETÍCULA DE MESAS */
 .seccionMesasGrid {
-  background: white;
-  border: 2px solid #cbd5e1;
-  border-radius: 12px;
-  padding: 16px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  border-radius: 16px;
+  padding: 18px;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.05);
 }
 
 .headerConBoton {
@@ -219,19 +229,21 @@
 }
 
 .tarjetaMesa {
-  background: #f8fafc;
-  border: 2px solid #cbd5e1;
-  border-radius: 12px;
+  background: linear-gradient(180deg, #f8fafc 0%, #eff6ff 100%);
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
   padding: 14px;
   text-align: center;
   cursor: pointer;
   position: relative;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
+  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.04);
 }
 
 .tarjetaMesa:hover {
-  border-color: #94a3b8;
+  border-color: #93c5fd;
   background: #f1f5f9;
+  transform: translateY(-2px);
 }
 
 .mesaLibre {
@@ -275,11 +287,11 @@
 
 /* COMANDERA DE MESA (DERECHA) */
 .panelPedidoMesa {
-  background: white;
-  border: 2px solid #cbd5e1;
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  border-radius: 16px;
+  padding: 22px;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.05);
 }
 
 .formClienteGrid, .grid3Campos, .grid2Campos {
@@ -380,42 +392,45 @@
 }
 
 .btnGuardarPedido {
-  background: #475569;
+  background: linear-gradient(135deg, #475569 0%, #334155 100%);
   color: white;
   border: 2px solid #334155;
   padding: 10px;
-  border-radius: 8px;
-  font-weight: bold;
+  border-radius: 10px;
+  font-weight: 700;
   cursor: pointer;
+  box-shadow: 0 8px 16px rgba(71, 85, 105, 0.18);
 }
 
 .btnCobrar {
-  background: #16a34a;
+  background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
   color: white;
   border: 2px solid #15803d;
   padding: 12px;
-  border-radius: 8px;
-  font-weight: bold;
+  border-radius: 10px;
+  font-weight: 800;
   cursor: pointer;
+  box-shadow: 0 12px 18px rgba(22, 163, 74, 0.2);
 }
 
 /* BOTONES CON BORDES RESALTADOS (FORMULARIOS Y ACCIONES) */
 .btnAgregarConBorde, .formStandard button[type="submit"] {
-  background: #2563eb;
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
   color: white;
   border: 2px solid #1d4ed8;
   padding: 10px 18px;
-  border-radius: 8px;
-  font-weight: bold;
+  border-radius: 10px;
+  font-weight: 800;
   cursor: pointer;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-  transition: all 0.2s;
+  box-shadow: 0 10px 18px rgba(37, 99, 235, 0.18);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
   margin-top: 6px;
 }
 
 .btnAgregarConBorde:hover, .formStandard button[type="submit"]:hover {
-  background: #1d4ed8;
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
   border-color: #1e40af;
+  transform: translateY(-1px);
 }
 
 .btnAgregarLineaConBorde {
@@ -471,24 +486,40 @@
 .gridMetricasCaja {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
+  gap: 16px;
   margin-bottom: 24px;
 }
 
 .cardMetrica {
-  background: white;
-  padding: 16px;
-  border-radius: 12px;
-  border: 2px solid #cbd5e1;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  padding: 18px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.05);
+}
+
+.cardMetrica span {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-bottom: 8px;
+}
+
+.cardMetrica h3 {
+  margin: 0;
+  font-size: clamp(1.3rem, 2vw, 2rem);
+  line-height: 1.2;
 }
 
 .formArqueoCaja {
-  background: white;
-  padding: 20px;
-  border-radius: 12px;
-  border: 2px solid #cbd5e1;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  padding: 22px;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.05);
 }
 
 .gridArqueoInputs {
@@ -537,24 +568,27 @@
 }
 
 .btnCierreAccion {
-  background: #dc2626;
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
   color: white;
-  border: 2px solid #b91c1c;
+  border: 2px solid #991b1b;
   padding: 12px 20px;
-  border-radius: 8px;
-  font-weight: bold;
+  border-radius: 10px;
+  font-weight: 800;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 10px 18px rgba(220, 38, 38, 0.2);
 }
 
 .btnCierreAccion:hover {
-  background: #b91c1c;
+  transform: translateY(-1px);
+  box-shadow: 0 14px 22px rgba(220, 38, 38, 0.25);
 }
 
 .btnCierreAccion:disabled {
   background: #94a3b8;
   border-color: #64748b;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 /* TABLAS GENERALES CON BORDES */
@@ -562,35 +596,39 @@
   width: 100%;
   border-collapse: collapse;
   background: white;
-  border-radius: 8px;
-  border: 2px solid #cbd5e1;
+  border-radius: 12px;
+  border: 1px solid #dbe7f5;
   overflow: hidden;
   margin-top: 16px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.04);
 }
 
 .tablaApp th {
-  background: #f8fafc;
+  background: linear-gradient(180deg, #f8fafc 0%, #eef4ff 100%);
   padding: 12px;
-  border-bottom: 2px solid #cbd5e1;
+  border-bottom: 1px solid #dbe6f7;
   text-align: left;
   color: #475569;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .tablaApp td {
   padding: 12px;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid #edf2f7;
   text-align: left;
+  color: #334155;
 }
 
 /* FORMULARIOS ESTÁNDAR (INVENTARIOS / PRODUCTOS) */
 .formStandard {
-  background: white;
-  border: 2px solid #cbd5e1;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  border: 1px solid rgba(148, 163, 184, 0.6);
   padding: 20px;
-  border-radius: 12px;
+  border-radius: 16px;
   margin-bottom: 20px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.04);
 }
 
 /* MODALES */
