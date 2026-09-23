@@ -561,11 +561,13 @@
   position: absolute;
   top: 6px;
   right: 6px;
-  background: white;
+  background: #fff7f7;
   border: 1px solid #cbd5e1;
-  border-radius: 4px;
-  padding: 2px 4px;
-  font-size: 11px;
+  border-radius: 6px;
+  padding: 4px 7px;
+  color: #b91c1c;
+  font-size: 10px;
+  font-weight: 700;
   cursor: pointer;
 }
 

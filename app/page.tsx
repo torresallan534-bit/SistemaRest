@@ -257,7 +257,7 @@ export default function Home() {
         await supabase.from('mesas').insert(mesasIniciales);
 
         await cargarTodo(data.user.id);
-        alert('¡Registro exitoso! Tu negocio ha sido creado con 5 mesas por defecto.');
+        alert('Registro exitoso. Tu negocio fue creado con cinco mesas iniciales.');
       }
     } else {
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -331,7 +331,7 @@ export default function Home() {
       setBaseEfectivoJornada(baseNum);
       setJornadaId(data.id);
       setBaseEfectivoInput('');
-      alert(`✅ Turno iniciado con una base de $${baseNum.toLocaleString()}`);
+      alert(`Turno iniciado con una base de $${baseNum.toLocaleString()}.`);
     }
   };
 
@@ -397,7 +397,7 @@ export default function Home() {
   const difTransferencia = transferenciaReal !== '' ? (parseFloat(transferenciaReal) || 0) - totalTransferenciaHoy : null;
 
   const seleccionarMesa = (m: Mesa) => {
-    if (!cajaAbierta) return alert('⚠️ Debes realizar la apertura de caja para iniciar el turno.');
+    if (!cajaAbierta) return alert('Debes abrir la caja antes de iniciar el turno.');
     setMesaSeleccionada(m);
     setLineasMesa(m.pedidos || []);
     setClienteNombreMesa(m.cliente_nombre || '');
@@ -580,7 +580,7 @@ export default function Home() {
         .update({ estado: 'cerrada' })
         .eq('id', jornadaId);
 
-      alert('🔒 Arqueo completado y guardado de forma inmutable en el historial.');
+      alert('Arqueo completado y guardado en el historial.');
 
       // 3. Resetear el estado local para dejar el sistema preparado para un nuevo turno en $0
       setCajaAbierta(false);
@@ -705,7 +705,7 @@ export default function Home() {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: '#0f172a', fontFamily: 'sans-serif', padding: '20px 0' }}>
         <div style={{ background: 'white', padding: '32px', borderRadius: '16px', border: '2px solid #cbd5e1', maxWidth: '460px', width: '90%', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)' }}>
-          <h2 style={{ margin: '0 0 6px', color: '#0f172a', textAlign: 'center' }}>🍽️ RestoPOS Pro</h2>
+          <h2 style={{ margin: '0 0 6px', color: '#0f172a', textAlign: 'center' }}>RestoPOS Pro</h2>
           <p style={{ margin: '0 0 20px', color: '#475569', textAlign: 'center', fontSize: '14px', fontWeight: '500' }}>
             {esRegistro ? 'Completa los datos para la facturación' : 'Inicia sesión para continuar'}
           </p>
@@ -822,14 +822,14 @@ export default function Home() {
       {/* BARRA SUPERIOR */}
       <nav className={styles.barrasNavegacion}>
         <div className={styles.brandTitle}>
-          🍽️ {perfil?.nombre_local ? perfil.nombre_local : 'RestoPOS Pro'}
+          {perfil?.nombre_local ? perfil.nombre_local : 'RestoPOS Pro'}
         </div>
         <div className={styles.botonesModulo}>
           <button className={`${styles.btnModulo} ${modulo === 'ventas' ? styles.activeModulo : ''}`} onClick={() => setModulo('ventas')}>
-            🏪 Ventas y Caja
+            Ventas y caja
           </button>
           <button className={`${styles.btnModulo} ${modulo === 'produccion' ? styles.activeModulo : ''}`} onClick={() => setModulo('produccion')}>
-            📦 Producción y Costes
+            Producción y costos
           </button>
           <div className={styles.menuUsuario}>
             <button
@@ -871,7 +871,7 @@ export default function Home() {
                   onClick={() => setPersonalizacionAbierta(!personalizacionAbierta)}
                   aria-expanded={personalizacionAbierta}
                 >
-                  <span>🎨</span> Personalizar aplicación
+                  <span>Personalización</span>
                   <span className={styles.indicadorPersonalizacion}>{personalizacionAbierta ? '⌃' : '›'}</span>
                 </button>
                 {personalizacionAbierta && (
@@ -925,9 +925,9 @@ export default function Home() {
       {modulo === 'ventas' && (
         <div>
           <div className={styles.subBarra}>
-            <button className={subPestanaVentas === 'mesas' ? styles.subActive : ''} onClick={() => setSubPestanaVentas('mesas')}>🪑 Mesas y Pedidos</button>
-            <button className={subPestanaVentas === 'caja' ? styles.subActive : ''} onClick={() => setSubPestanaVentas('caja')}>💰 Cierre de Caja</button>
-            <button className={subPestanaVentas === 'historial' ? styles.subActive : ''} onClick={() => setSubPestanaVentas('historial')}>📋 Historiales</button>
+            <button className={subPestanaVentas === 'mesas' ? styles.subActive : ''} onClick={() => setSubPestanaVentas('mesas')}>Mesas y pedidos</button>
+            <button className={subPestanaVentas === 'caja' ? styles.subActive : ''} onClick={() => setSubPestanaVentas('caja')}>Cierre de caja</button>
+            <button className={subPestanaVentas === 'historial' ? styles.subActive : ''} onClick={() => setSubPestanaVentas('historial')}>Historial</button>
           </div>
 
           {/* MESAS */}
@@ -935,9 +935,9 @@ export default function Home() {
             <div className={styles.layoutTresColumnas}>
               <div className={styles.widgetArqueoIzquierdo}>
                 <div className={styles.cardArqueoHeader}>
-                  <h4>💵 Arqueo / Turno Activo</h4>
+                  <h4>Arqueo de turno</h4>
                   <span className={cajaAbierta ? styles.statusAbierta : styles.statusCerrada}>
-                    {cajaAbierta ? '🟢 TURNO ABIERTO' : '🔴 SIN TURNO'}
+                    {cajaAbierta ? 'Turno abierto' : 'Sin turno activo'}
                   </span>
                 </div>
 
@@ -952,15 +952,15 @@ export default function Home() {
                       onChange={(e) => setBaseEfectivoInput(e.target.value)}
                     />
                     <button onClick={abrirCajaJornada} className={styles.btnApertura}>
-                      🔓 ABRIR NUEVO TURNO
+                      Abrir nuevo turno
                     </button>
                   </div>
                 ) : (
                   <div className={styles.resumenArqueoBox}>
                     <div className={styles.filaResumen}><span>Base Inicial:</span><strong>${baseEfectivoJornada.toLocaleString()}</strong></div>
-                    <div className={styles.filaResumen}><span>💵 Efectivo:</span><strong>${totalEfectivoHoy.toLocaleString()}</strong></div>
-                    <div className={styles.filaResumen}><span>💳 Tarjeta:</span><strong>${totalTarjetaHoy.toLocaleString()}</strong></div>
-                    <div className={styles.filaResumen}><span>📲 Transferencia:</span><strong>${totalTransferenciaHoy.toLocaleString()}</strong></div>
+                    <div className={styles.filaResumen}><span>Efectivo:</span><strong>${totalEfectivoHoy.toLocaleString()}</strong></div>
+                    <div className={styles.filaResumen}><span>Tarjeta:</span><strong>${totalTarjetaHoy.toLocaleString()}</strong></div>
+                    <div className={styles.filaResumen}><span>Transferencia:</span><strong>${totalTransferenciaHoy.toLocaleString()}</strong></div>
                     <div className={styles.filaResumenTotal}><span>Total en Caja:</span><strong>${(baseEfectivoJornada + totalHoy).toLocaleString()}</strong></div>
                   </div>
                 )}
@@ -984,7 +984,7 @@ export default function Home() {
                       <span className={styles.badgeEstado}>{m.estado.toUpperCase()}</span>
                       <h4>{m.nombre}</h4>
                       <p>{m.pedidos ? m.pedidos.length : 0} ítems</p>
-                      <button onClick={(e) => { e.stopPropagation(); eliminarMesa(m.id); }} className={styles.btnTrashMesa}>🗑️</button>
+                      <button aria-label={`Eliminar ${m.nombre}`} onClick={(e) => { e.stopPropagation(); eliminarMesa(m.id); }} className={styles.btnTrashMesa}>Eliminar</button>
                     </div>
                   ))}
                 </div>
@@ -1026,7 +1026,7 @@ export default function Home() {
 
                     <div style={{ marginTop: '12px' }}>
                       <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>
-                        📝 Observaciones para Cocina:
+                        Observaciones para cocina:
                       </label>
                       <textarea
                         rows={2}
@@ -1043,8 +1043,8 @@ export default function Home() {
                     </div>
 
                     <div className={styles.accionesMesa}>
-                      <button className={styles.btnGuardarPedido} onClick={guardarPedidoMesa}>💾 Guardar Comanda</button>
-                      <button className={styles.btnCobrar} onClick={abrirModalCobrar}>⚡ IR A COBRAR Y FACTURAR</button>
+                      <button className={styles.btnGuardarPedido} onClick={guardarPedidoMesa}>Guardar pedido</button>
+                      <button className={styles.btnCobrar} onClick={abrirModalCobrar}>Cobrar y facturar</button>
                     </div>
                   </>
                 ) : null}
@@ -1068,36 +1068,36 @@ export default function Home() {
                 <h3>Ingresar Conteo Físico Real del Turno</h3>
                 <div className={styles.gridArqueoInputs}>
                   <div>
-                    <label>💵 Efectivo Físico (Incluyendo Base)</label>
+                    <label>Efectivo contado (incluye base)</label>
                     <input type="number" placeholder="Monto real" value={efectivoReal} onChange={(e) => setEfectivoReal(e.target.value)} />
                     {difEfectivo !== null && (
                       <span className={difEfectivo < 0 ? styles.badgeDiferenciaError : styles.badgeDiferenciaOk}>
-                        {difEfectivo === 0 ? '✅ Cuadre exacto' : difEfectivo < 0 ? `⚠️ Falta: $${difEfectivo.toLocaleString()}` : `➕ Sobra: +$${difEfectivo.toLocaleString()}`}
+                        {difEfectivo === 0 ? 'Cuadre exacto' : difEfectivo < 0 ? `Falta: $${Math.abs(difEfectivo).toLocaleString()}` : `Sobra: $${difEfectivo.toLocaleString()}`}
                       </span>
                     )}
                   </div>
                   <div>
-                    <label>💳 Tarjetas Físico</label>
+                    <label>Tarjetas contadas</label>
                     <input type="number" placeholder="Monto real" value={tarjetaReal} onChange={(e) => setTarjetaReal(e.target.value)} />
                     {difTarjeta !== null && (
                       <span className={difTarjeta < 0 ? styles.badgeDiferenciaError : styles.badgeDiferenciaOk}>
-                        {difTarjeta === 0 ? '✅ Cuadre exacto' : difTarjeta < 0 ? `⚠️ Falta: $${difTarjeta.toLocaleString()}` : `➕ Sobra: +$${difTarjeta.toLocaleString()}`}
+                        {difTarjeta === 0 ? 'Cuadre exacto' : difTarjeta < 0 ? `Falta: $${Math.abs(difTarjeta).toLocaleString()}` : `Sobra: $${difTarjeta.toLocaleString()}`}
                       </span>
                     )}
                   </div>
                   <div>
-                    <label>📲 Transferencias Físico</label>
+                    <label>Transferencias verificadas</label>
                     <input type="number" placeholder="Monto real" value={transferenciaReal} onChange={(e) => setTransferenciaReal(e.target.value)} />
                     {difTransferencia !== null && (
                       <span className={difTransferencia < 0 ? styles.badgeDiferenciaError : styles.badgeDiferenciaOk}>
-                        {difTransferencia === 0 ? '✅ Cuadre exacto' : difTransferencia < 0 ? `⚠️ Falta: $${difTransferencia.toLocaleString()}` : `➕ Sobra: +$${difTransferencia.toLocaleString()}`}
+                        {difTransferencia === 0 ? 'Cuadre exacto' : difTransferencia < 0 ? `Falta: $${Math.abs(difTransferencia).toLocaleString()}` : `Sobra: $${difTransferencia.toLocaleString()}`}
                       </span>
                     )}
                   </div>
                 </div>
 
                 <button className={styles.btnCierreAccion} onClick={realizarCierreCaja} disabled={!cajaAbierta}>
-                  🔒 CERRAR Y GUARDAR ARQUEO DE TURNO
+                  Cerrar y guardar arqueo
                 </button>
               </div>
 
@@ -1118,7 +1118,7 @@ export default function Home() {
                             <td>{v.cliente}</td>
                             <td>{v.metodo_pago}</td>
                             <td><strong>${v.total.toLocaleString()}</strong></td>
-                            <td><button onClick={() => setVentaSeleccionada(v)} className={styles.btnVerConBorde}>👁️ Detalle</button></td>
+                            <td><button onClick={() => setVentaSeleccionada(v)} className={styles.btnVerConBorde}>Ver detalle</button></td>
                           </tr>
                         ))
                       )}
@@ -1147,10 +1147,10 @@ export default function Home() {
                       value={cierreFiltroSeleccionado} 
                       onChange={(e) => setCierreFiltroSeleccionado(e.target.value)}
                     >
-                      <option value="abierta">🟢 Turno Activo (En servicio)</option>
+                      <option value="abierta">Turno activo</option>
                       {cierres.map((c) => (
                         <option key={c.id} value={c.id}>
-                          🔒 Arqueo del {formatearFecha(c.fecha)} — Total: ${c.total_sistema.toLocaleString()}
+                          Arqueo del {formatearFecha(c.fecha)} — Total: ${c.total_sistema.toLocaleString()}
                         </option>
                       ))}
                     </select>
@@ -1160,7 +1160,7 @@ export default function Home() {
                   {cierreFiltroSeleccionado !== 'abierta' && arqueoSeleccionado && (
                     <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1', marginBottom: '20px' }}>
                       <h4 style={{ margin: '0 0 10px', color: '#0f172a' }}>
-                        📊 Resumen del Arqueo — {formatearFecha(arqueoSeleccionado.fecha)}
+                        Resumen del arqueo — {formatearFecha(arqueoSeleccionado.fecha)}
                       </h4>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', fontSize: '13px' }}>
                         <div><span>Base Inicial:</span><br/><strong>${(arqueoSeleccionado.base_inicial || 0).toLocaleString()}</strong></div>
@@ -1199,8 +1199,8 @@ export default function Home() {
                               <td>{v.metodo_pago}</td>
                               <td><strong>${v.total.toLocaleString()}</strong></td>
                               <td>
-                                <button onClick={() => setVentaSeleccionada(v)} className={styles.btnVerConBorde}>👁️ Ver Ticket</button>
-                                <button onClick={() => eliminarVenta(v.id)} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>🗑️ Eliminar</button>
+                                <button onClick={() => setVentaSeleccionada(v)} className={styles.btnVerConBorde}>Ver ticket</button>
+                                <button onClick={() => eliminarVenta(v.id)} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>Eliminar</button>
                               </td>
                             </tr>
                           ))
@@ -1226,7 +1226,7 @@ export default function Home() {
                             ${(c.diferencia_efectivo + c.diferencia_tarjeta + c.diferencia_transferencia).toLocaleString()}
                           </td>
                           <td>
-                            <button onClick={() => eliminarCierre(c.id)} className={styles.btnEliminarConBorde}>🗑️ Eliminar Arqueo</button>
+                            <button onClick={() => eliminarCierre(c.id)} className={styles.btnEliminarConBorde}>Eliminar arqueo</button>
                           </td>
                         </tr>
                       ))}
@@ -1243,16 +1243,16 @@ export default function Home() {
       {modulo === 'produccion' && (
         <div>
           <div className={styles.subBarra}>
-            <button className={subPestanaProduccion === 'inventario' ? styles.subActive : ''} onClick={() => setSubPestanaProduccion('inventario')}>📦 Inventario Insumos</button>
-            <button className={subPestanaProduccion === 'recetas' ? styles.subActive : ''} onClick={() => setSubPestanaProduccion('recetas')}>🍳 Recetas y Escandallos</button>
-            <button className={subPestanaProduccion === 'productos' ? styles.subActive : ''} onClick={() => setSubPestanaProduccion('productos')}>🍔 Menú y Productos</button>
+            <button className={subPestanaProduccion === 'inventario' ? styles.subActive : ''} onClick={() => setSubPestanaProduccion('inventario')}>Inventario de insumos</button>
+            <button className={subPestanaProduccion === 'recetas' ? styles.subActive : ''} onClick={() => setSubPestanaProduccion('recetas')}>Recetas y costos</button>
+            <button className={subPestanaProduccion === 'productos' ? styles.subActive : ''} onClick={() => setSubPestanaProduccion('productos')}>Productos y precios</button>
           </div>
 
           {/* INVENTARIO */}
           {subPestanaProduccion === 'inventario' && (
             <div className={styles.paddingBloque}>
               <form onSubmit={guardarInsumo} className={styles.formStandard}>
-                <h3>➕ Registrar Materia Prima</h3>
+                <h3>Registrar materia prima</h3>
                 <div className={styles.grid3Campos}>
                   <input type="text" placeholder="Nombre insumo" value={nuevoInsumoNombre} onChange={(e) => setNuevoInsumoNombre(e.target.value)} required />
                   <select value={nuevoInsumoUnidad} onChange={(e) => setNuevoInsumoUnidad(e.target.value)}>
@@ -1289,7 +1289,7 @@ export default function Home() {
           {subPestanaProduccion === 'recetas' && (
             <div className={styles.paddingBloque}>
               <form onSubmit={guardarRecetaMultiple} className={styles.formStandard}>
-                <h3>🍳 Crear / Vincular Receta Múltiple</h3>
+                <h3>Crear receta</h3>
 
                 <div style={{ marginBottom: '12px' }}>
                   <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>Producto del Menú:</label>
@@ -1327,11 +1327,11 @@ export default function Home() {
                   <button type="button" className={styles.btnAgregarLineaConBorde} onClick={() => setLineasReceta([...lineasReceta, { insumo_id: '', cantidad_requerida: '' }])}>
                     ＋ Agregar otro insumo
                   </button>
-                  <button type="submit" className={styles.btnAgregarConBorde}>💾 Guardar Receta Completa</button>
+                  <button type="submit" className={styles.btnAgregarConBorde}>Guardar receta</button>
                 </div>
               </form>
 
-              <h3 style={{ marginTop: '28px' }}>📋 Recetas Registradas</h3>
+              <h3 style={{ marginTop: '28px' }}>Recetas registradas</h3>
               <div className={styles.tablaResponsiveContainer}>
                 <table className={styles.tablaApp}>
                   <thead>
@@ -1361,11 +1361,11 @@ export default function Home() {
                           </td>
                           <td>
                             {recetaEditandoId === r.id ? (
-                              <button onClick={() => editarCantidadReceta(r.id)} className={styles.btnAgregarConBorde}>💾 Guardar</button>
+                              <button onClick={() => editarCantidadReceta(r.id)} className={styles.btnAgregarConBorde}>Guardar</button>
                             ) : (
-                              <button onClick={() => { setRecetaEditandoId(r.id); setCantEditandoVal(r.cantidad_requerida.toString()); }} className={styles.btnVerConBorde}>✏️ Editar</button>
+                              <button onClick={() => { setRecetaEditandoId(r.id); setCantEditandoVal(r.cantidad_requerida.toString()); }} className={styles.btnVerConBorde}>Editar</button>
                             )}
-                            <button onClick={() => eliminarRecetaItem(r.id)} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>🗑️</button>
+                            <button aria-label="Eliminar receta" onClick={() => eliminarRecetaItem(r.id)} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>Eliminar</button>
                           </td>
                         </tr>
                       );
@@ -1380,7 +1380,7 @@ export default function Home() {
           {subPestanaProduccion === 'productos' && (
             <div className={styles.paddingBloque}>
               <form onSubmit={guardarProducto} className={styles.formStandard}>
-                <h3>{productoEditando ? '✏️ Editar Producto' : '➕ Nuevo Producto del Menú'}</h3>
+                <h3>{productoEditando ? 'Editar producto' : 'Nuevo producto'}</h3>
                 <div className={styles.grid2Campos}>
                   <input type="text" placeholder="Nombre" value={nuevoNombre} onChange={(e) => setNuevoNombre(e.target.value)} required />
                   <input type="number" placeholder="Precio ($)" value={nuevoPrecio} onChange={(e) => setNuevoPrecio(e.target.value)} required />
@@ -1397,8 +1397,8 @@ export default function Home() {
                         <td>{p.nombre}</td>
                         <td>${p.precio.toLocaleString()}</td>
                         <td>
-                          <button onClick={() => { setProductoEditando(p); setNuevoNombre(p.nombre); setNuevoPrecio(p.precio.toString()); }} className={styles.btnVerConBorde}>✏️ Editar</button>
-                          <button onClick={async () => { await supabase.from('productos').delete().eq('id', p.id); if (usuario) obtenerProductos(usuario.id); }} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>🗑️ Eliminar</button>
+                          <button onClick={() => { setProductoEditando(p); setNuevoNombre(p.nombre); setNuevoPrecio(p.precio.toString()); }} className={styles.btnVerConBorde}>Editar</button>
+                          <button onClick={async () => { await supabase.from('productos').delete().eq('id', p.id); if (usuario) obtenerProductos(usuario.id); }} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>Eliminar</button>
                         </td>
                       </tr>
                     ))}
@@ -1416,7 +1416,7 @@ export default function Home() {
           <div className={styles.modalContentTicket} onClick={(e) => e.stopPropagation()}>
             <div className={styles.ticketImpresionArea}>
               <div style={{ textAlign: 'center', borderBottom: '2px dashed #0f172a', paddingBottom: '8px', marginBottom: '8px' }}>
-                <h2 style={{ margin: 0, fontSize: '20px' }}>👨‍🍳 PEDIDO COCINA</h2>
+                <h2 style={{ margin: 0, fontSize: '20px' }}>Pedido de cocina</h2>
                 <h3 style={{ margin: '4px 0 0', fontSize: '18px' }}>COMANDA #{comandaImprimir.numero}</h3>
                 <p style={{ margin: '2px 0', fontSize: '12px' }}><strong>MESA:</strong> {comandaImprimir.mesa}</p>
                 <p style={{ margin: '2px 0', fontSize: '12px', color: '#475569' }}>Hora Entrada: {comandaImprimir.hora}</p>
@@ -1442,7 +1442,7 @@ export default function Home() {
 
               {comandaImprimir.comentario && (
                 <div style={{ marginTop: '12px', background: '#f1f5f9', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
-                  <span style={{ fontSize: '11px', fontWeight: 'bold', display: 'block', color: '#0f172a' }}>📌 OBSERVACIONES:</span>
+                  <span style={{ fontSize: '11px', fontWeight: 'bold', display: 'block', color: '#0f172a' }}>Observaciones:</span>
                   <p style={{ margin: '2px 0 0', fontSize: '13px', fontWeight: 'bold', color: '#b91c1c' }}>
                     {comandaImprimir.comentario}
                   </p>
@@ -1452,7 +1452,7 @@ export default function Home() {
 
             <div className={styles.modalActions}>
               <button onClick={() => { window.print(); setComandaImprimir(null); }} className={styles.btnCobrar} style={{ flex: 1 }}>
-                🖨️ Imprimir Comanda
+                Imprimir pedido
               </button>
               <button onClick={() => setComandaImprimir(null)} className={styles.btnAgregarConBorde}>
                 Cerrar
@@ -1499,16 +1499,16 @@ export default function Home() {
               </table>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '18px', fontWeight: 'bold', borderTop: '2px dashed #0f172a', paddingTop: '8px', marginTop: '12px' }}>
-                <span>TOTAL A PAGAR:</span>
+                <span>Total a pagar:</span>
                 <strong style={{ color: '#16a34a' }}>${totalCalculadoMesa.toLocaleString()}</strong>
               </div>
             </div>
 
             <div className={styles.columnaOpcionesCobro}>
-              <h3>💳 Opciones de Pago</h3>
+              <h3>Opciones de pago</h3>
 
               <div style={{ margin: '12px 0' }}>
-                <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Método de Pago:</label>
+                <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Método de pago:</label>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   {(['Efectivo', 'Tarjeta', 'Transferencia'] as const).map((m) => (
                     <button
@@ -1517,9 +1517,6 @@ export default function Home() {
                       onClick={() => setMetodoPago(m)}
                       style={{ flex: 1, padding: '10px', border: '1.5px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
                     >
-                      {m === 'Efectivo' && '💵 '}
-                      {m === 'Tarjeta' && '💳 '}
-                      {m === 'Transferencia' && '📲 '}
                       {m}
                     </button>
                   ))}
@@ -1528,7 +1525,7 @@ export default function Home() {
 
               {metodoPago === 'Efectivo' && (
                 <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1.5px solid #cbd5e1', margin: '12px 0' }}>
-                  <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>Monto Pagado por el Cliente ($):</label>
+                  <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>Monto pagado por el cliente:</label>
                   <input
                     type="number"
                     placeholder="Ej: 50000"
@@ -1542,11 +1539,11 @@ export default function Home() {
                     <div style={{ marginTop: '10px' }}>
                       {cambioEfectivo >= 0 ? (
                         <div style={{ color: '#15803d', fontWeight: 'bold', fontSize: '16px', background: '#dcfce7', padding: '8px', borderRadius: '6px' }}>
-                          💵 Cambio a entregar: ${cambioEfectivo.toLocaleString()}
+                          Cambio a entregar: ${cambioEfectivo.toLocaleString()}
                         </div>
                       ) : (
                         <div style={{ color: '#b91c1c', fontWeight: 'bold', fontSize: '14px', background: '#fef2f2', padding: '8px', borderRadius: '6px' }}>
-                          ⚠️ Falta dinero: ${Math.abs(cambioEfectivo).toLocaleString()}
+                          Faltan: ${Math.abs(cambioEfectivo).toLocaleString()}
                         </div>
                       )}
                     </div>
@@ -1556,7 +1553,7 @@ export default function Home() {
 
               <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <button onClick={finalizarYCobrarVenta} className={styles.btnCobrar} style={{ width: '100%', fontSize: '16px' }}>
-                  ✅ FINALIZAR Y REGISTRAR VENTA
+                  Finalizar y registrar venta
                 </button>
                 <button onClick={() => setMostrarModalCobro(false)} className={styles.btnEliminarConBorde} style={{ width: '100%' }}>
                   Cancelar
@@ -1610,7 +1607,7 @@ export default function Home() {
 
             <div className={styles.modalActions}>
               <button onClick={() => { window.print(); setVentaConfirmadaTicket(null); setVentaSeleccionada(null); }} className={styles.btnCobrar} style={{ flex: 1 }}>
-                🖨️ Imprimir Ticket
+                Imprimir ticket
               </button>
               <button onClick={() => { setVentaConfirmadaTicket(null); setVentaSeleccionada(null); }} className={styles.btnAgregarConBorde}>
                 Cerrar
