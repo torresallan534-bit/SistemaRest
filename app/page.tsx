@@ -365,7 +365,7 @@ export default function Home() {
     if (data) setCierres(data as CierreCaja[]);
   };
 
-  // AISLAMIENTO DE TURNO: Filtrar ÚNICAMENTE las ventas que pertenezcan a la jornadaId activa actual
+  // AISLAMIENTO DE TURNO: Ventas que pertenecen EXCLUSIVAMENTE a la jornada activa actual
   const ventasJornadaActual = ventas.filter(
     (v) => v.jornada_id === jornadaId && !v.cierre_id
   );
@@ -553,13 +553,13 @@ export default function Home() {
     } else if (cierreGuardado && cierreGuardado[0]) {
       const nuevoCierreId = cierreGuardado[0].id;
 
-      // 1. Congelar las ventas asociándolas definitivamente al cierre_id generado
+      // 1. Vincular masivamente las ventas de esta jornada al nuevo cierre_id
       await supabase
         .from('ventas')
         .update({ cierre_id: nuevoCierreId })
         .eq('jornada_id', jornadaId);
 
-      // 2. Marcar la jornada/turno como cerrada en la base de datos
+      // 2. Marcar la jornada como cerrada
       await supabase
         .from('jornadas')
         .update({ estado: 'cerrada' })
@@ -577,6 +577,7 @@ export default function Home() {
       setTransferenciaReal('');
       setMesaSeleccionada(null);
 
+      // Recargar todo desde Supabase inmediatamente para sincronizar el cierre_id en las ventas locales
       await cargarTodo(usuario.id);
     }
   };
@@ -671,6 +672,7 @@ export default function Home() {
   // Lógica de filtrado dinámico para el Historial de Ventas por Arqueo/Turno
   const arqueoSeleccionado = cierres.find((c) => c.id === cierreFiltroSeleccionado);
 
+  // Muestra las ventas buscando coincidencia directa por cierre_id o por jornada_id asociada
   const ventasFiltradasHistorial = cierreFiltroSeleccionado === 'abierta'
     ? ventas.filter((v) => v.jornada_id === jornadaId && !v.cierre_id)
     : ventas.filter((v) => v.cierre_id === cierreFiltroSeleccionado);
@@ -1055,7 +1057,7 @@ export default function Home() {
                     </select>
                   </div>
 
-                  {/* Resumen dinámico al consultar un arqueo guardado */}
+                  {/* Resumen dinámico al consultar un arqueo guardado del pasado */}
                   {cierreFiltroSeleccionado !== 'abierta' && arqueoSeleccionado && (
                     <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1', marginBottom: '20px' }}>
                       <h4 style={{ margin: '0 0 10px', color: '#0f172a' }}>
