@@ -117,6 +117,15 @@ export default function Home() {
   const [ventaSeleccionada, setVentaSeleccionada] = useState<Venta | null>(null);
   const [cierreFiltroSeleccionado, setCierreFiltroSeleccionado] = useState<string>('abierta');
   const [menuUsuarioAbierto, setMenuUsuarioAbierto] = useState(false);
+  const [personalizacionAbierta, setPersonalizacionAbierta] = useState(false);
+  const [colorApp, setColorApp] = useState(() => {
+    if (typeof window === 'undefined') return '#2563eb';
+    return window.localStorage.getItem('restopos-color-app') || '#2563eb';
+  });
+
+  useEffect(() => {
+    window.localStorage.setItem('restopos-color-app', colorApp);
+  }, [colorApp]);
 
   const cargarPerfil = async (userId: string) => {
     const { data } = await supabase.from('perfiles').select('*').eq('id', userId).maybeSingle();
@@ -809,7 +818,7 @@ export default function Home() {
   }
 
   return (
-    <div className={styles.contenedorApp}>
+    <div className={styles.contenedorApp} style={{ '--app-accent': colorApp } as React.CSSProperties}>
       {/* BARRA SUPERIOR */}
       <nav className={styles.barrasNavegacion}>
         <div className={styles.brandTitle}>
@@ -856,6 +865,53 @@ export default function Home() {
                   {perfil?.telefono && <div><span>Teléfono</span><strong>{perfil.telefono}</strong></div>}
                   {perfil?.direccion && <div><span>Dirección</span><strong>{perfil.direccion}</strong></div>}
                 </div>
+                <button
+                  type="button"
+                  className={styles.btnPersonalizar}
+                  onClick={() => setPersonalizacionAbierta(!personalizacionAbierta)}
+                  aria-expanded={personalizacionAbierta}
+                >
+                  <span>🎨</span> Personalizar aplicación
+                  <span className={styles.indicadorPersonalizacion}>{personalizacionAbierta ? '⌃' : '›'}</span>
+                </button>
+                {personalizacionAbierta && (
+                  <div className={styles.panelPersonalizacion}>
+                    <div className={styles.tituloPersonalizacion}>
+                      <div>
+                        <strong>Color de la aplicación</strong>
+                        <span>Personaliza el color principal de tu espacio.</span>
+                      </div>
+                      <input
+                        type="color"
+                        value={colorApp}
+                        onChange={(event) => setColorApp(event.target.value)}
+                        aria-label="Elegir color principal"
+                      />
+                    </div>
+                    <div className={styles.paletaColores}>
+                      {[
+                        ['Azul', '#2563eb'],
+                        ['Violeta', '#7c3aed'],
+                        ['Esmeralda', '#059669'],
+                        ['Naranja', '#ea580c'],
+                        ['Rosado', '#db2777'],
+                      ].map(([nombre, color]) => (
+                        <button
+                          key={color}
+                          type="button"
+                          title={nombre}
+                          aria-label={`Usar color ${nombre}`}
+                          className={`${styles.muestraColor} ${colorApp === color ? styles.muestraColorActiva : ''}`}
+                          style={{ backgroundColor: color }}
+                          onClick={() => setColorApp(color)}
+                        />
+                      ))}
+                    </div>
+                    <button type="button" className={styles.btnRestaurarColor} onClick={() => setColorApp('#2563eb')}>
+                      Restaurar color original
+                    </button>
+                  </div>
+                )}
                 <button type="button" className={styles.btnCerrarSesion} onClick={cerrarSesion} role="menuitem">
                   <span>↪</span> Cerrar sesión
                 </button>
