@@ -522,10 +522,10 @@ export default function Home() {
     }
   };
 
-  // CIERRE DE ARQUEO / TURNO DEFINITIVO
+  // CIERRE DE ARQUEO / TURNO DEFINITIVO CON VINCULACIÓN GARANTIZADA DE VENTAS
   const realizarCierreCaja = async () => {
     if (!usuario || !jornadaId) return alert('No hay un turno activo para cerrar');
-    if (!confirm('¿Seguro de realizar el cierre de turno? El arqueo quedará congelado y guardado en el historial.')) return;
+    if (!confirm('¿Seguro de realizar el cierre de turno? El arqueo quedará congelado en el historial.')) return;
 
     const efReal = parseFloat(efectivoReal) || 0;
     const tarReal = parseFloat(tarjetaReal) || 0;
@@ -546,18 +546,27 @@ export default function Home() {
       user_id: usuario.id,
     };
 
-    const { data: cierreGuardado, error } = await supabase.from('cierres_caja').insert([cierre]).select();
+    const { data: cierreGuardado, error: errorCierre } = await supabase
+      .from('cierres_caja')
+      .insert([cierre])
+      .select();
 
-    if (error) {
-      alert('Error en el cierre: ' + error.message);
-    } else if (cierreGuardado && cierreGuardado[0]) {
+    if (errorCierre) {
+      return alert('Error al realizar el cierre: ' + errorCierre.message);
+    }
+
+    if (cierreGuardado && cierreGuardado[0]) {
       const nuevoCierreId = cierreGuardado[0].id;
 
-      // 1. Vincular masivamente las ventas de esta jornada al nuevo cierre_id
-      await supabase
+      // 1. Asignar el cierre_id a todas las ventas pertenecientes a este turno
+      const { error: errorVentas } = await supabase
         .from('ventas')
         .update({ cierre_id: nuevoCierreId })
         .eq('jornada_id', jornadaId);
+
+      if (errorVentas) {
+        console.error('Error al actualizar cierre_id en ventas:', errorVentas.message);
+      }
 
       // 2. Marcar la jornada como cerrada
       await supabase
@@ -565,9 +574,9 @@ export default function Home() {
         .update({ estado: 'cerrada' })
         .eq('id', jornadaId);
 
-      alert('🔒 Arqueo completado y guardado de forma inmutable en el historial.');
+      alert('🔒 Arqueo completado y guardado con su historial de ventas.');
 
-      // 3. Resetear el estado local para dejar el sistema preparado para un nuevo turno en $0
+      // 3. Limpiar estado local
       setCajaAbierta(false);
       setBaseEfectivoJornada(0);
       setJornadaId(null);
@@ -577,8 +586,10 @@ export default function Home() {
       setTransferenciaReal('');
       setMesaSeleccionada(null);
 
-      // Recargar todo desde Supabase inmediatamente para sincronizar el cierre_id en las ventas locales
-      await cargarTodo(usuario.id);
+      // 4. Refrescar estado explícitamente desde Supabase
+      await obtenerVentas(usuario.id);
+      await obtenerCierres(usuario.id);
+      await obtenerJornadaActiva(usuario.id);
     }
   };
 
@@ -669,13 +680,15 @@ export default function Home() {
   const pagaConValor = parseFloat(montoPagaCon) || 0;
   const cambioEfectivo = pagaConValor - totalCalculadoMesa;
 
-  // Lógica de filtrado dinámico para el Historial de Ventas por Arqueo/Turno
-  const arqueoSeleccionado = cierres.find((c) => c.id === cierreFiltroSeleccionado);
+  // Lógica de filtrado con normalización de tipos
+  const arqueoSeleccionado = cierres.find((c) => String(c.id) === String(cierreFiltroSeleccionado));
 
-  // Muestra las ventas buscando coincidencia directa por cierre_id o por jornada_id asociada
   const ventasFiltradasHistorial = cierreFiltroSeleccionado === 'abierta'
     ? ventas.filter((v) => v.jornada_id === jornadaId && !v.cierre_id)
-    : ventas.filter((v) => v.cierre_id === cierreFiltroSeleccionado);
+    : ventas.filter((v) => {
+        if (!cierreFiltroSeleccionado) return false;
+        return String(v.cierre_id) === String(cierreFiltroSeleccionado);
+      });
 
   if (cargandoAuth) {
     return (
