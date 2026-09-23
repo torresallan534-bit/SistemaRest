@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import type { User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabaseClient';
 import styles from './Calculadora.module.css';
 
@@ -33,7 +34,7 @@ interface CierreCaja { id: string; fecha: string; base_inicial: number; total_si
 
 export default function Home() {
   // Autenticación y Perfil
-  const [usuario, setUsuario] = useState<any>(null);
+  const [usuario, setUsuario] = useState<User | null>(null);
   const [perfil, setPerfil] = useState<Perfil | null>(null);
   
   // Formulario Registro
@@ -116,6 +117,26 @@ export default function Home() {
   const [ventaSeleccionada, setVentaSeleccionada] = useState<Venta | null>(null);
   const [cierreFiltroSeleccionado, setCierreFiltroSeleccionado] = useState<string>('abierta');
 
+  const cargarPerfil = async (userId: string) => {
+    const { data } = await supabase.from('perfiles').select('*').eq('id', userId).maybeSingle();
+    if (data) setPerfil(data as Perfil);
+  };
+
+  const cargarTodo = async (userId?: string) => {
+    const uId = userId || usuario?.id;
+    if (!uId) return;
+
+    await Promise.all([
+      obtenerJornadaActiva(uId),
+      obtenerProductos(uId),
+      obtenerInsumos(uId),
+      obtenerRecetas(uId),
+      obtenerVentas(uId),
+      obtenerMesas(uId),
+      obtenerCierres(uId),
+    ]);
+  };
+
   // Inicialización de Sesión Persistente
   useEffect(() => {
     const inicializarSesion = async () => {
@@ -184,11 +205,6 @@ export default function Home() {
     };
   }, [usuario?.id]);
 
-  const cargarPerfil = async (userId: string) => {
-    const { data } = await supabase.from('perfiles').select('*').eq('id', userId).maybeSingle();
-    if (data) setPerfil(data as Perfil);
-  };
-
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!emailInput || !passwordInput) return alert('Completa correo y contraseña');
@@ -253,23 +269,8 @@ export default function Home() {
     setPerfil(null);
   };
 
-  const cargarTodo = async (userId?: string) => {
-    const uId = userId || usuario?.id;
-    if (!uId) return;
-
-    await Promise.all([
-      obtenerJornadaActiva(uId),
-      obtenerProductos(uId),
-      obtenerInsumos(uId),
-      obtenerRecetas(uId),
-      obtenerVentas(uId),
-      obtenerMesas(uId),
-      obtenerCierres(uId),
-    ]);
-  };
-
   // Obtener la jornada abierta
-  const obtenerJornadaActiva = async (uId: string) => {
+  async function obtenerJornadaActiva(uId: string) {
     if (!uId) return;
 
     const { data, error } = await supabase
@@ -298,7 +299,7 @@ export default function Home() {
   };
 
   // Abrir caja/turno
-  const abrirCajaJornada = async () => {
+  async function abrirCajaJornada() {
     if (!usuario?.id) return alert('No hay usuario autenticado');
     const baseNum = parseFloat(baseEfectivoInput) || 0;
 
@@ -321,27 +322,27 @@ export default function Home() {
     }
   };
 
-  const obtenerProductos = async (uId: string) => {
+  async function obtenerProductos(uId: string) {
     const { data } = await supabase.from('productos').select('*').eq('user_id', uId).order('nombre', { ascending: true });
     if (data) setProductos(data as Producto[]);
   };
 
-  const obtenerInsumos = async (uId: string) => {
+  async function obtenerInsumos(uId: string) {
     const { data } = await supabase.from('insumos').select('*').eq('user_id', uId).order('nombre', { ascending: true });
     if (data) setInsumos(data as Insumo[]);
   };
 
-  const obtenerRecetas = async (uId: string) => {
+  async function obtenerRecetas(uId: string) {
     const { data } = await supabase.from('recetas').select('*').eq('user_id', uId);
     if (data) setRecetas(data as RecetaItem[]);
   };
 
-  const obtenerVentas = async (uId: string) => {
+  async function obtenerVentas(uId: string) {
     const { data } = await supabase.from('ventas').select('*').eq('user_id', uId).order('created_at', { ascending: false });
     if (data) setVentas(data as Venta[]);
   };
 
-  const obtenerMesas = async (uId: string) => {
+  async function obtenerMesas(uId: string) {
     const { data } = await supabase.from('mesas').select('*').eq('user_id', uId).order('nombre', { ascending: true });
     
     if (data && data.length === 0) {
@@ -360,7 +361,7 @@ export default function Home() {
     }
   };
 
-  const obtenerCierres = async (uId: string) => {
+  async function obtenerCierres(uId: string) {
     const { data } = await supabase.from('cierres_caja').select('*').eq('user_id', uId).order('fecha', { ascending: false });
     if (data) setCierres(data as CierreCaja[]);
   };
@@ -375,9 +376,10 @@ export default function Home() {
   const totalTarjetaHoy = ventasJornadaActual.filter((v) => v.metodo_pago === 'Tarjeta').reduce((acc, v) => acc + (v.total || 0), 0);
   const totalTransferenciaHoy = ventasJornadaActual.filter((v) => v.metodo_pago === 'Transferencia').reduce((acc, v) => acc + (v.total || 0), 0);
 
-  const efectivoEsperadoEnCaja = baseEfectivoJornada + totalEfectivoHoy;
+  // Solo para la relación del cierre físico: base inicial + efectivo del turno.
+  const efectivoEsperadoParaConteoCierre = baseEfectivoJornada + totalEfectivoHoy;
 
-  const difEfectivo = efectivoReal !== '' ? (parseFloat(efectivoReal) || 0) - efectivoEsperadoEnCaja : null;
+  const difEfectivo = efectivoReal !== '' ? (parseFloat(efectivoReal) || 0) - efectivoEsperadoParaConteoCierre : null;
   const difTarjeta = tarjetaReal !== '' ? (parseFloat(tarjetaReal) || 0) - totalTarjetaHoy : null;
   const difTransferencia = transferenciaReal !== '' ? (parseFloat(transferenciaReal) || 0) - totalTransferenciaHoy : null;
 
@@ -540,7 +542,7 @@ export default function Home() {
       efectivo_real: efReal,
       tarjeta_real: tarReal,
       transferencia_real: transReal,
-      diferencia_efectivo: efReal - efectivoEsperadoEnCaja,
+      diferencia_efectivo: efReal - efectivoEsperadoParaConteoCierre,
       diferencia_tarjeta: tarReal - totalTarjetaHoy,
       diferencia_transferencia: transReal - totalTransferenciaHoy,
       user_id: usuario.id,
@@ -960,7 +962,7 @@ export default function Home() {
 
               <div className={styles.gridMetricasCaja}>
                 <div className={styles.cardMetrica}><span>Base del Turno</span><h3>${baseEfectivoJornada.toLocaleString()}</h3></div>
-                <div className={styles.cardMetrica}><span>Efectivo Esperado</span><h3 style={{ color: '#16a34a' }}>${efectivoEsperadoEnCaja.toLocaleString()}</h3></div>
+                <div className={styles.cardMetrica}><span>Efectivo de Turno</span><h3 style={{ color: '#16a34a' }}>${totalEfectivoHoy.toLocaleString()}</h3></div>
                 <div className={styles.cardMetrica}><span>Tarjetas Turno</span><h3 style={{ color: '#9333ea' }}>${totalTarjetaHoy.toLocaleString()}</h3></div>
                 <div className={styles.cardMetrica}><span>Transferencias Turno</span><h3 style={{ color: '#ea580c' }}>${totalTransferenciaHoy.toLocaleString()}</h3></div>
               </div>
