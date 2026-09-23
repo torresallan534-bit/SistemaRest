@@ -62,7 +62,7 @@ export default function Home() {
   const [mesas, setMesas] = useState<Mesa[]>([]);
   const [cierres, setCierres] = useState<CierreCaja[]>([]);
 
-  // Control Arqueo y Jornada
+  // Control Arqueo / Turno
   const [cajaAbierta, setCajaAbierta] = useState<boolean>(false);
   const [baseEfectivoInput, setBaseEfectivoInput] = useState<string>('');
   const [baseEfectivoJornada, setBaseEfectivoJornada] = useState<number>(0);
@@ -150,7 +150,7 @@ export default function Home() {
     };
   }, []);
 
-  // CANAL EN TIEMPO REAL: Sincronización instantánea entre dispositivos
+  // CANAL EN TIEMPO REAL: Sincronización instantánea
   useEffect(() => {
     if (!usuario?.id) return;
 
@@ -219,7 +219,6 @@ export default function Home() {
         setPerfil(perfilObj);
         setUsuario(data.user);
 
-        // Crear 5 mesas iniciales por defecto
         const mesasIniciales = [
           { nombre: 'Mesa 1', user_id: data.user.id, estado: 'libre' },
           { nombre: 'Mesa 2', user_id: data.user.id, estado: 'libre' },
@@ -269,7 +268,7 @@ export default function Home() {
     ]);
   };
 
-  // Obtener la jornada abierta directamente de la BD
+  // Obtener la jornada abierta
   const obtenerJornadaActiva = async (uId: string) => {
     if (!uId) return;
 
@@ -298,7 +297,7 @@ export default function Home() {
     }
   };
 
-  // Abrir caja garantizando inserción con user_id
+  // Abrir caja/turno
   const abrirCajaJornada = async () => {
     if (!usuario?.id) return alert('No hay usuario autenticado');
     const baseNum = parseFloat(baseEfectivoInput) || 0;
@@ -312,13 +311,13 @@ export default function Home() {
       .single();
 
     if (error) {
-      alert('Error de Supabase al abrir caja: ' + error.message);
+      alert('Error de Supabase al abrir turno: ' + error.message);
     } else if (data) {
       setCajaAbierta(true);
       setBaseEfectivoJornada(baseNum);
       setJornadaId(data.id);
       setBaseEfectivoInput('');
-      alert(`✅ Caja abierta con base de $${baseNum.toLocaleString()}`);
+      alert(`✅ Turno iniciado con una base de $${baseNum.toLocaleString()}`);
     }
   };
 
@@ -366,7 +365,7 @@ export default function Home() {
     if (data) setCierres(data as CierreCaja[]);
   };
 
-  // VINCULACIÓN ESTRICTA: Filtrar ÚNICAMENTE las ventas asociadas a la jornada/turno actual
+  // AISLAMIENTO DE TURNO: Filtrar ÚNICAMENTE las ventas que pertenezcan a la jornadaId activa actual
   const ventasJornadaActual = ventas.filter(
     (v) => v.jornada_id === jornadaId && !v.cierre_id
   );
@@ -383,7 +382,7 @@ export default function Home() {
   const difTransferencia = transferenciaReal !== '' ? (parseFloat(transferenciaReal) || 0) - totalTransferenciaHoy : null;
 
   const seleccionarMesa = (m: Mesa) => {
-    if (!cajaAbierta) return alert('⚠️ Debes realizar la apertura de caja primero.');
+    if (!cajaAbierta) return alert('⚠️ Debes realizar la apertura de caja para iniciar el turno.');
     setMesaSeleccionada(m);
     setLineasMesa(m.pedidos || []);
     setClienteNombreMesa(m.cliente_nombre || '');
@@ -496,7 +495,7 @@ export default function Home() {
       productos: productosDetalle,
       total: totalCalculado,
       user_id: usuario.id,
-      jornada_id: jornadaId, // 👈 Se guarda asociado explícitamente a la jornada activa
+      jornada_id: jornadaId, // 👈 Asociada al id del turno activo
     };
 
     const { data: ventaGuardada, error } = await supabase.from('ventas').insert([nuevaVenta]).select();
@@ -523,10 +522,10 @@ export default function Home() {
     }
   };
 
-  // CIERRE DE CAJA DEFINITIVO
+  // CIERRE DE ARQUEO / TURNO DEFINITIVO
   const realizarCierreCaja = async () => {
-    if (!usuario || !jornadaId) return alert('No hay una jornada activa para cerrar');
-    if (!confirm('¿Seguro de realizar el cierre de caja? Esto finalizará la jornada actual.')) return;
+    if (!usuario || !jornadaId) return alert('No hay un turno activo para cerrar');
+    if (!confirm('¿Seguro de realizar el cierre de turno? El arqueo quedará congelado y guardado en el historial.')) return;
 
     const efReal = parseFloat(efectivoReal) || 0;
     const tarReal = parseFloat(tarjetaReal) || 0;
@@ -554,21 +553,21 @@ export default function Home() {
     } else if (cierreGuardado && cierreGuardado[0]) {
       const nuevoCierreId = cierreGuardado[0].id;
 
-      // 1. Vincular todas las ventas de la jornada actual a este cierre
+      // 1. Congelar las ventas asociándolas definitivamente al cierre_id generado
       await supabase
         .from('ventas')
         .update({ cierre_id: nuevoCierreId })
         .eq('jornada_id', jornadaId);
 
-      // 2. Marcar la jornada como cerrada en Supabase
+      // 2. Marcar la jornada/turno como cerrada en la base de datos
       await supabase
         .from('jornadas')
         .update({ estado: 'cerrada' })
         .eq('id', jornadaId);
 
-      alert('🔒 Cierre completado. La jornada ha sido finalizada con éxito.');
+      alert('🔒 Arqueo completado y guardado de forma inmutable en el historial.');
 
-      // 3. Limpieza completa del estado de caja local
+      // 3. Resetear el estado local para dejar el sistema preparado para un nuevo turno en $0
       setCajaAbierta(false);
       setBaseEfectivoJornada(0);
       setJornadaId(null);
@@ -669,6 +668,7 @@ export default function Home() {
   const pagaConValor = parseFloat(montoPagaCon) || 0;
   const cambioEfectivo = pagaConValor - totalCalculadoMesa;
 
+  // HISTORIAL DE VENTAS: Se puede consultar filtrando únicamente por cada Arqueo/Cierre guardado
   const ventasFiltradasHistorial = cierreFiltroSeleccionado === 'abierta'
     ? ventas.filter((v) => v.jornada_id === jornadaId && !v.cierre_id)
     : ventas.filter((v) => v.cierre_id === cierreFiltroSeleccionado);
@@ -832,15 +832,15 @@ export default function Home() {
             <div className={styles.layoutTresColumnas}>
               <div className={styles.widgetArqueoIzquierdo}>
                 <div className={styles.cardArqueoHeader}>
-                  <h4>💵 Arqueo de Caja</h4>
+                  <h4>💵 Arqueo / Turno Activo</h4>
                   <span className={cajaAbierta ? styles.statusAbierta : styles.statusCerrada}>
-                    {cajaAbierta ? '🟢 ABIERTA' : '🔴 CERRADA'}
+                    {cajaAbierta ? '🟢 TURNO ABIERTO' : '🔴 SIN TURNO'}
                   </span>
                 </div>
 
                 {!cajaAbierta ? (
                   <div className={styles.aperturaBox}>
-                    <p style={{ fontSize: '13px', color: '#64748b' }}>Ingresa la base inicial:</p>
+                    <p style={{ fontSize: '13px', color: '#64748b' }}>Ingresa la base inicial para abrir el turno:</p>
                     <input
                       type="number"
                       placeholder="Base ($)"
@@ -849,7 +849,7 @@ export default function Home() {
                       onChange={(e) => setBaseEfectivoInput(e.target.value)}
                     />
                     <button onClick={abrirCajaJornada} className={styles.btnApertura}>
-                      🔓 ABRIR CAJA DEL DÍA
+                      🔓 ABRIR NUEVO TURNO
                     </button>
                   </div>
                 ) : (
@@ -952,17 +952,17 @@ export default function Home() {
           {/* CIERRE DE CAJA */}
           {subPestanaVentas === 'caja' && (
             <div className={styles.seccionCaja}>
-              <h2>Control y Cierre de Caja (Jornada Activa)</h2>
+              <h2>Control y Cierre de Arqueo (Turno Activo)</h2>
 
               <div className={styles.gridMetricasCaja}>
-                <div className={styles.cardMetrica}><span>Base del Día</span><h3>${baseEfectivoJornada.toLocaleString()}</h3></div>
+                <div className={styles.cardMetrica}><span>Base del Turno</span><h3>${baseEfectivoJornada.toLocaleString()}</h3></div>
                 <div className={styles.cardMetrica}><span>Efectivo Esperado</span><h3 style={{ color: '#16a34a' }}>${efectivoEsperadoEnCaja.toLocaleString()}</h3></div>
-                <div className={styles.cardMetrica}><span>Tarjetas Sistema</span><h3 style={{ color: '#9333ea' }}>${totalTarjetaHoy.toLocaleString()}</h3></div>
-                <div className={styles.cardMetrica}><span>Transferencias Sistema</span><h3 style={{ color: '#ea580c' }}>${totalTransferenciaHoy.toLocaleString()}</h3></div>
+                <div className={styles.cardMetrica}><span>Tarjetas Turno</span><h3 style={{ color: '#9333ea' }}>${totalTarjetaHoy.toLocaleString()}</h3></div>
+                <div className={styles.cardMetrica}><span>Transferencias Turno</span><h3 style={{ color: '#ea580c' }}>${totalTransferenciaHoy.toLocaleString()}</h3></div>
               </div>
 
               <div className={styles.formArqueoCaja}>
-                <h3>Ingresar Conteo Físico Real de Dinero</h3>
+                <h3>Ingresar Conteo Físico Real del Turno</h3>
                 <div className={styles.gridArqueoInputs}>
                   <div>
                     <label>💵 Efectivo Físico (Incluyendo Base)</label>
@@ -994,12 +994,12 @@ export default function Home() {
                 </div>
 
                 <button className={styles.btnCierreAccion} onClick={realizarCierreCaja} disabled={!cajaAbierta}>
-                  🔒 CERRAR JORNADA Y FINALIZAR DÍA
+                  🔒 CERRAR Y GUARDAR ARQUEO DE TURNO
                 </button>
               </div>
 
               <div style={{ marginTop: '28px' }}>
-                <h3>Ventas de la Jornada Activa ({ventasJornadaActual.length})</h3>
+                <h3>Ventas del Turno Activo ({ventasJornadaActual.length})</h3>
                 <div className={styles.tablaResponsiveContainer}>
                   <table className={styles.tablaApp}>
                     <thead>
@@ -1007,7 +1007,7 @@ export default function Home() {
                     </thead>
                     <tbody>
                       {ventasJornadaActual.length === 0 ? (
-                        <tr><td colSpan={5} style={{ textAlign: 'center', color: '#94a3b8' }}>No hay ventas registradas en la jornada en curso.</td></tr>
+                        <tr><td colSpan={5} style={{ textAlign: 'center', color: '#94a3b8' }}>No hay ventas registradas en el turno actual.</td></tr>
                       ) : (
                         ventasJornadaActual.map((v) => (
                           <tr key={v.id}>
@@ -1030,19 +1030,19 @@ export default function Home() {
           {subPestanaVentas === 'historial' && (
             <div className={styles.seccionHistoriales}>
               <div className={styles.subSubBarra}>
-                <button className={subPestanaHistorial === 'ventas' ? styles.subSubActive : ''} onClick={() => setSubPestanaHistorial('ventas')}>Historial de Ventas por Cierre</button>
-                <button className={subPestanaHistorial === 'cierres' ? styles.subSubActive : ''} onClick={() => setSubPestanaHistorial('cierres')}>Historial de Cierres de Caja</button>
+                <button className={subPestanaHistorial === 'ventas' ? styles.subSubActive : ''} onClick={() => setSubPestanaHistorial('ventas')}>Historial de Ventas por Arqueo</button>
+                <button className={subPestanaHistorial === 'cierres' ? styles.subSubActive : ''} onClick={() => setSubPestanaHistorial('cierres')}>Historial de Arqueos / Turnos</button>
               </div>
 
               {subPestanaHistorial === 'ventas' ? (
                 <div>
                   <div style={{ margin: '16px 0', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                    <label style={{ fontWeight: 'bold' }}>Filtrar por Cierre / Jornada:</label>
-                    <select className={styles.selectChico} style={{ maxWidth: '350px', width: '100%' }} value={cierreFiltroSeleccionado} onChange={(e) => setCierreFiltroSeleccionado(e.target.value)}>
-                      <option value="abierta">🟢 Jornada Activa (En servicio)</option>
+                    <label style={{ fontWeight: 'bold' }}>Seleccionar Arqueo / Turno:</label>
+                    <select className={styles.selectChico} style={{ maxWidth: '380px', width: '100%' }} value={cierreFiltroSeleccionado} onChange={(e) => setCierreFiltroSeleccionado(e.target.value)}>
+                      <option value="abierta">🟢 Turno Activo (En servicio)</option>
                       {cierres.map((c) => (
                         <option key={c.id} value={c.id}>
-                          🔒 Cierre del {formatearFecha(c.fecha)} (${c.total_sistema.toLocaleString()})
+                          🔒 Arqueo del {formatearFecha(c.fecha)} (${c.total_sistema.toLocaleString()})
                         </option>
                       ))}
                     </select>
@@ -1054,18 +1054,22 @@ export default function Home() {
                         <tr><th>Hora/Fecha</th><th>Cliente</th><th>Método</th><th>Total</th><th>Acciones</th></tr>
                       </thead>
                       <tbody>
-                        {ventasFiltradasHistorial.map((v) => (
-                          <tr key={v.id}>
-                            <td>{formatearFecha(v.created_at)}</td>
-                            <td>{v.cliente}</td>
-                            <td>{v.metodo_pago}</td>
-                            <td><strong>${v.total.toLocaleString()}</strong></td>
-                            <td>
-                              <button onClick={() => setVentaSeleccionada(v)} className={styles.btnVerConBorde}>👁️ Detalle</button>
-                              <button onClick={() => eliminarVenta(v.id)} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>🗑️ Eliminar</button>
-                            </td>
-                          </tr>
-                        ))}
+                        {ventasFiltradasHistorial.length === 0 ? (
+                          <tr><td colSpan={5} style={{ textAlign: 'center', color: '#94a3b8' }}>No hay ventas registradas en este arqueo.</td></tr>
+                        ) : (
+                          ventasFiltradasHistorial.map((v) => (
+                            <tr key={v.id}>
+                              <td>{formatearFecha(v.created_at)}</td>
+                              <td>{v.cliente}</td>
+                              <td>{v.metodo_pago}</td>
+                              <td><strong>${v.total.toLocaleString()}</strong></td>
+                              <td>
+                                <button onClick={() => setVentaSeleccionada(v)} className={styles.btnVerConBorde}>👁️ Detalle</button>
+                                <button onClick={() => eliminarVenta(v.id)} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>🗑️ Eliminar</button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -1074,7 +1078,7 @@ export default function Home() {
                 <div className={styles.tablaResponsiveContainer}>
                   <table className={styles.tablaApp}>
                     <thead>
-                      <tr><th>Fecha Cierre</th><th>Base</th><th>Total Sistema</th><th>Efectivo Real</th><th>Diferencia</th><th>Acciones</th></tr>
+                      <tr><th>Fecha Arqueo</th><th>Base</th><th>Total Sistema</th><th>Efectivo Real</th><th>Diferencia</th><th>Acciones</th></tr>
                     </thead>
                     <tbody>
                       {cierres.map((c) => (
@@ -1087,7 +1091,7 @@ export default function Home() {
                             ${(c.diferencia_efectivo + c.diferencia_tarjeta + c.diferencia_transferencia).toLocaleString()}
                           </td>
                           <td>
-                            <button onClick={() => eliminarCierre(c.id)} className={styles.btnEliminarConBorde}>🗑️ Eliminar Cierre</button>
+                            <button onClick={() => eliminarCierre(c.id)} className={styles.btnEliminarConBorde}>🗑️ Eliminar Arqueo</button>
                           </td>
                         </tr>
                       ))}
