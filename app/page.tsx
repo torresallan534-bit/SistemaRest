@@ -169,6 +169,8 @@ export default function Home() {
     return () => {
       authListener.subscription.unsubscribe();
     };
+  // La sesión se inicializa una sola vez; las suscripciones posteriores sincronizan los datos.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // CANAL EN TIEMPO REAL: Sincronización instantánea
