@@ -20,6 +20,7 @@ interface RecetaItem { id: string; producto_id: string; insumo_id: string; canti
 interface LineaFactura { id: number; productoId: string; cantidad: number; }
 interface ProductoVenta { nombre: string; cantidad: number; precioUnitario: number; subtotal: number; }
 interface Venta { id: number; created_at: string; cliente: string; documento: string; metodo_pago: string; total: number; productos: ProductoVenta[]; cierre_id?: string; user_id?: string; jornada_id?: string; }
+interface Gasto { id: string; created_at: string; concepto: string; metodo_pago: 'Efectivo' | 'Tarjeta' | 'Transferencia'; monto: number; jornada_id?: string; cierre_id?: string; user_id?: string; }
 interface Mesa { 
   id: string; 
   nombre: string; 
@@ -30,7 +31,7 @@ interface Mesa {
   comentarios?: string;
   user_id?: string; 
 }
-interface CierreCaja { id: string; fecha: string; base_inicial: number; total_sistema: number; efectivo_sistema: number; tarjeta_sistema: number; transferencia_sistema: number; efectivo_real: number; tarjeta_real: number; transferencia_real: number; diferencia_efectivo: number; diferencia_tarjeta: number; diferencia_transferencia: number; user_id?: string; }
+interface CierreCaja { id: string; fecha: string; base_inicial: number; total_sistema: number; total_neto?: number; total_gastos?: number; efectivo_sistema: number; tarjeta_sistema: number; transferencia_sistema: number; gastos_efectivo?: number; gastos_tarjeta?: number; gastos_transferencia?: number; efectivo_real: number; tarjeta_real: number; transferencia_real: number; diferencia_efectivo: number; diferencia_tarjeta: number; diferencia_transferencia: number; user_id?: string; }
 
 export default function Home() {
   // Autenticación y Perfil
@@ -51,7 +52,7 @@ export default function Home() {
 
   // Navegación
   const [modulo, setModulo] = useState<'ventas' | 'produccion'>('ventas');
-  const [subPestanaVentas, setSubPestanaVentas] = useState<'mesas' | 'caja' | 'historial'>('mesas');
+  const [subPestanaVentas, setSubPestanaVentas] = useState<'mesas' | 'caja' | 'gastos' | 'historial'>('mesas');
   const [subPestanaProduccion, setSubPestanaProduccion] = useState<'inventario' | 'recetas' | 'productos'>('inventario');
   const [subPestanaHistorial, setSubPestanaHistorial] = useState<'ventas' | 'cierres'>('ventas');
 
@@ -60,6 +61,7 @@ export default function Home() {
   const [insumos, setInsumos] = useState<Insumo[]>([]);
   const [recetas, setRecetas] = useState<RecetaItem[]>([]);
   const [ventas, setVentas] = useState<Venta[]>([]);
+  const [gastos, setGastos] = useState<Gasto[]>([]);
   const [mesas, setMesas] = useState<Mesa[]>([]);
   const [cierres, setCierres] = useState<CierreCaja[]>([]);
 
@@ -97,6 +99,9 @@ export default function Home() {
   const [efectivoReal, setEfectivoReal] = useState('');
   const [tarjetaReal, setTarjetaReal] = useState('');
   const [transferenciaReal, setTransferenciaReal] = useState('');
+  const [conceptoGasto, setConceptoGasto] = useState('');
+  const [montoGasto, setMontoGasto] = useState('');
+  const [metodoPagoGasto, setMetodoPagoGasto] = useState<Gasto['metodo_pago']>('Efectivo');
 
   // Formularios Producción
   const [prodRecetaSel, setProdRecetaSel] = useState('');
@@ -142,6 +147,7 @@ export default function Home() {
       obtenerInsumos(uId),
       obtenerRecetas(uId),
       obtenerVentas(uId),
+      obtenerGastos(uId),
       obtenerMesas(uId),
       obtenerCierres(uId),
     ]);
@@ -209,6 +215,11 @@ export default function Home() {
           await obtenerJornadaActiva(usuario.id);
           await obtenerVentas(usuario.id);
         }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'gastos', filter: `user_id=eq.${usuario.id}` },
+        () => obtenerGastos(usuario.id)
       )
       .subscribe();
 
@@ -335,6 +346,42 @@ export default function Home() {
     }
   };
 
+  const registrarGasto = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const monto = parseFloat(montoGasto);
+    if (!usuario?.id || !jornadaId) return alert('Debes tener un turno abierto para registrar un gasto.');
+    if (!conceptoGasto.trim()) return alert('Ingresa el concepto del gasto.');
+    if (!Number.isFinite(monto) || monto <= 0) return alert('Ingresa un monto de gasto válido.');
+
+    const { error } = await supabase.from('gastos').insert([{
+      concepto: conceptoGasto.trim(),
+      monto,
+      metodo_pago: metodoPagoGasto,
+      jornada_id: jornadaId,
+      user_id: usuario.id,
+    }]);
+
+    if (error) {
+      alert('No fue posible registrar el gasto: ' + error.message);
+      return;
+    }
+
+    setConceptoGasto('');
+    setMontoGasto('');
+    setMetodoPagoGasto('Efectivo');
+    await obtenerGastos(usuario.id);
+  };
+
+  const eliminarGasto = async (id: string) => {
+    if (!confirm('¿Deseas eliminar este gasto?')) return;
+    const { error } = await supabase.from('gastos').delete().eq('id', id);
+    if (error) {
+      alert('No fue posible eliminar el gasto: ' + error.message);
+      return;
+    }
+    if (usuario) await obtenerGastos(usuario.id);
+  };
+
   async function obtenerProductos(uId: string) {
     const { data } = await supabase.from('productos').select('*').eq('user_id', uId).order('nombre', { ascending: true });
     if (data) setProductos(data as Producto[]);
@@ -353,6 +400,19 @@ export default function Home() {
   async function obtenerVentas(uId: string) {
     const { data } = await supabase.from('ventas').select('*').eq('user_id', uId).order('created_at', { ascending: false });
     if (data) setVentas(data as Venta[]);
+  };
+
+  async function obtenerGastos(uId: string) {
+    const { data, error } = await supabase
+      .from('gastos')
+      .select('*')
+      .eq('user_id', uId)
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.error('Error al obtener gastos:', error.message);
+      return;
+    }
+    if (data) setGastos(data as Gasto[]);
   };
 
   async function obtenerMesas(uId: string) {
@@ -388,13 +448,19 @@ export default function Home() {
   const totalEfectivoHoy = ventasJornadaActual.filter((v) => (v.metodo_pago || 'Efectivo') === 'Efectivo').reduce((acc, v) => acc + (v.total || 0), 0);
   const totalTarjetaHoy = ventasJornadaActual.filter((v) => v.metodo_pago === 'Tarjeta').reduce((acc, v) => acc + (v.total || 0), 0);
   const totalTransferenciaHoy = ventasJornadaActual.filter((v) => v.metodo_pago === 'Transferencia').reduce((acc, v) => acc + (v.total || 0), 0);
+  const gastosJornadaActual = gastos.filter((g) => g.jornada_id === jornadaId && !g.cierre_id);
+  const totalGastosEfectivoHoy = gastosJornadaActual.filter((g) => g.metodo_pago === 'Efectivo').reduce((acc, g) => acc + (g.monto || 0), 0);
+  const totalGastosTarjetaHoy = gastosJornadaActual.filter((g) => g.metodo_pago === 'Tarjeta').reduce((acc, g) => acc + (g.monto || 0), 0);
+  const totalGastosTransferenciaHoy = gastosJornadaActual.filter((g) => g.metodo_pago === 'Transferencia').reduce((acc, g) => acc + (g.monto || 0), 0);
 
   // Solo para la relación del cierre físico: base inicial + efectivo del turno.
-  const efectivoEsperadoParaConteoCierre = baseEfectivoJornada + totalEfectivoHoy;
+  const efectivoEsperadoParaConteoCierre = baseEfectivoJornada + totalEfectivoHoy - totalGastosEfectivoHoy;
 
+  const tarjetaSistemaNeto = totalTarjetaHoy - totalGastosTarjetaHoy;
+  const transferenciaSistemaNeta = totalTransferenciaHoy - totalGastosTransferenciaHoy;
   const difEfectivo = efectivoReal !== '' ? (parseFloat(efectivoReal) || 0) - efectivoEsperadoParaConteoCierre : null;
-  const difTarjeta = tarjetaReal !== '' ? (parseFloat(tarjetaReal) || 0) - totalTarjetaHoy : null;
-  const difTransferencia = transferenciaReal !== '' ? (parseFloat(transferenciaReal) || 0) - totalTransferenciaHoy : null;
+  const difTarjeta = tarjetaReal !== '' ? (parseFloat(tarjetaReal) || 0) - tarjetaSistemaNeto : null;
+  const difTransferencia = transferenciaReal !== '' ? (parseFloat(transferenciaReal) || 0) - transferenciaSistemaNeta : null;
 
   const seleccionarMesa = (m: Mesa) => {
     if (!cajaAbierta) return alert('Debes abrir la caja antes de iniciar el turno.');
@@ -549,9 +615,14 @@ export default function Home() {
     const cierre = {
       base_inicial: baseEfectivoJornada,
       total_sistema: totalHoy,
+      total_neto: totalHoy - (totalGastosEfectivoHoy + totalGastosTarjetaHoy + totalGastosTransferenciaHoy),
       efectivo_sistema: totalEfectivoHoy,
       tarjeta_sistema: totalTarjetaHoy,
       transferencia_sistema: totalTransferenciaHoy,
+      gastos_efectivo: totalGastosEfectivoHoy,
+      gastos_tarjeta: totalGastosTarjetaHoy,
+      gastos_transferencia: totalGastosTransferenciaHoy,
+      total_gastos: totalGastosEfectivoHoy + totalGastosTarjetaHoy + totalGastosTransferenciaHoy,
       efectivo_real: efReal,
       tarjeta_real: tarReal,
       transferencia_real: transReal,
@@ -573,6 +644,12 @@ export default function Home() {
         .from('ventas')
         .update({ cierre_id: nuevoCierreId })
         .eq('jornada_id', jornadaId);
+
+      await supabase
+        .from('gastos')
+        .update({ cierre_id: nuevoCierreId })
+        .eq('jornada_id', jornadaId)
+        .is('cierre_id', null);
 
       // 2. Marcar la jornada como cerrada
       await supabase
@@ -691,6 +768,9 @@ export default function Home() {
   const ventasFiltradasHistorial = cierreFiltroSeleccionado === 'abierta'
     ? ventas.filter((v) => v.jornada_id === jornadaId && !v.cierre_id)
     : ventas.filter((v) => v.cierre_id === cierreFiltroSeleccionado);
+  const gastosFiltradosHistorial = cierreFiltroSeleccionado === 'abierta'
+    ? gastosJornadaActual
+    : gastos.filter((g) => g.cierre_id === cierreFiltroSeleccionado);
 
   if (cargandoAuth) {
     return (
@@ -927,6 +1007,7 @@ export default function Home() {
           <div className={styles.subBarra}>
             <button className={subPestanaVentas === 'mesas' ? styles.subActive : ''} onClick={() => setSubPestanaVentas('mesas')}>Mesas y pedidos</button>
             <button className={subPestanaVentas === 'caja' ? styles.subActive : ''} onClick={() => setSubPestanaVentas('caja')}>Cierre de caja</button>
+            <button className={subPestanaVentas === 'gastos' ? styles.subActive : ''} onClick={() => setSubPestanaVentas('gastos')}>Gastos</button>
             <button className={subPestanaVentas === 'historial' ? styles.subActive : ''} onClick={() => setSubPestanaVentas('historial')}>Historial</button>
           </div>
 
@@ -984,7 +1065,7 @@ export default function Home() {
                       <span className={styles.badgeEstado}>{m.estado.toUpperCase()}</span>
                       <h4>{m.nombre}</h4>
                       <p>{m.pedidos ? m.pedidos.length : 0} ítems</p>
-                      <button aria-label={`Eliminar ${m.nombre}`} onClick={(e) => { e.stopPropagation(); eliminarMesa(m.id); }} className={styles.btnTrashMesa}>Eliminar</button>
+                      <button aria-label={`Eliminar ${m.nombre}`} onClick={(e) => { e.stopPropagation(); eliminarMesa(m.id); }} className={styles.btnTrashMesa}>🗑️</button>
                     </div>
                   ))}
                 </div>
@@ -1048,6 +1129,68 @@ export default function Home() {
                     </div>
                   </>
                 ) : null}
+              </div>
+            </div>
+          )}
+
+          {subPestanaVentas === 'gastos' && (
+            <div className={styles.seccionCaja}>
+              <h2>Registro de gastos</h2>
+              <p className={styles.descripcionSeccion}>
+                Registra las salidas de dinero del turno y asócialas al medio de pago correspondiente.
+              </p>
+
+              <div className={styles.gridMetricasCaja}>
+                <div className={styles.cardMetrica}><span>Gastos del turno</span><h3>${(totalGastosEfectivoHoy + totalGastosTarjetaHoy + totalGastosTransferenciaHoy).toLocaleString()}</h3></div>
+                <div className={styles.cardMetrica}><span>Gastos en efectivo</span><h3>${totalGastosEfectivoHoy.toLocaleString()}</h3></div>
+                <div className={styles.cardMetrica}><span>Gastos con tarjeta</span><h3>${totalGastosTarjetaHoy.toLocaleString()}</h3></div>
+                <div className={styles.cardMetrica}><span>Gastos por transferencia</span><h3>${totalGastosTransferenciaHoy.toLocaleString()}</h3></div>
+              </div>
+
+              <form className={styles.formArqueoCaja} onSubmit={registrarGasto}>
+                <h3>Registrar gasto</h3>
+                <div className={styles.gridArqueoInputs}>
+                  <div>
+                    <label htmlFor="concepto-gasto">Concepto</label>
+                    <input id="concepto-gasto" type="text" placeholder="Ejemplo: compra de insumos" value={conceptoGasto} onChange={(e) => setConceptoGasto(e.target.value)} />
+                  </div>
+                  <div>
+                    <label htmlFor="monto-gasto">Monto</label>
+                    <input id="monto-gasto" type="number" min="0.01" step="0.01" placeholder="Ingrese el monto" value={montoGasto} onChange={(e) => setMontoGasto(e.target.value)} />
+                  </div>
+                  <div>
+                    <label htmlFor="metodo-gasto">Método de pago</label>
+                    <select id="metodo-gasto" className={styles.selectChico} value={metodoPagoGasto} onChange={(e) => setMetodoPagoGasto(e.target.value as Gasto['metodo_pago'])}>
+                      <option value="Efectivo">Efectivo</option>
+                      <option value="Tarjeta">Tarjeta</option>
+                      <option value="Transferencia">Transferencia</option>
+                    </select>
+                  </div>
+                </div>
+                <button type="submit" className={styles.btnAgregarConBorde} disabled={!cajaAbierta}>Registrar gasto</button>
+                {!cajaAbierta && <p className={styles.mensajeAyuda}>Abre un turno para registrar gastos.</p>}
+              </form>
+
+              <div style={{ marginTop: '28px' }}>
+                <h3>Gastos del turno actual ({gastosJornadaActual.length})</h3>
+                <div className={styles.tablaResponsiveContainer}>
+                  <table className={styles.tablaApp}>
+                    <thead><tr><th>Fecha</th><th>Concepto</th><th>Método de pago</th><th>Monto</th><th>Acción</th></tr></thead>
+                    <tbody>
+                      {gastosJornadaActual.length === 0 ? (
+                        <tr><td colSpan={5} style={{ textAlign: 'center', color: '#94a3b8' }}>No hay gastos registrados en el turno actual.</td></tr>
+                      ) : gastosJornadaActual.map((gasto) => (
+                        <tr key={gasto.id}>
+                          <td>{formatearFecha(gasto.created_at)}</td>
+                          <td>{gasto.concepto}</td>
+                          <td>{gasto.metodo_pago}</td>
+                          <td><strong>${gasto.monto.toLocaleString()}</strong></td>
+                          <td><button aria-label={`Eliminar gasto ${gasto.concepto}`} onClick={() => eliminarGasto(gasto.id)} className={styles.btnEliminarConBorde}>🗑️</button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
@@ -1168,6 +1311,8 @@ export default function Home() {
                         <div><span>Efectivo:</span><br/><strong>${arqueoSeleccionado.efectivo_sistema.toLocaleString()}</strong></div>
                         <div><span>Tarjeta:</span><br/><strong>${arqueoSeleccionado.tarjeta_sistema.toLocaleString()}</strong></div>
                         <div><span>Transferencia:</span><br/><strong>${arqueoSeleccionado.transferencia_sistema.toLocaleString()}</strong></div>
+                        <div><span>Total gastos:</span><br/><strong style={{ color: '#b45309' }}>${(arqueoSeleccionado.total_gastos || 0).toLocaleString()}</strong></div>
+                        <div><span>Total neto:</span><br/><strong>${(arqueoSeleccionado.total_neto || 0).toLocaleString()}</strong></div>
                         <div><span>Diferencia Cierre:</span><br/>
                           <strong style={{ color: (arqueoSeleccionado.diferencia_efectivo + arqueoSeleccionado.diferencia_tarjeta + arqueoSeleccionado.diferencia_transferencia) < 0 ? '#dc2626' : '#16a34a' }}>
                             ${(arqueoSeleccionado.diferencia_efectivo + arqueoSeleccionado.diferencia_tarjeta + arqueoSeleccionado.diferencia_transferencia).toLocaleString()}
@@ -1176,6 +1321,25 @@ export default function Home() {
                       </div>
                     </div>
                   )}
+
+                  <h4>Gastos asociados ({gastosFiltradosHistorial.length})</h4>
+                  <div className={styles.tablaResponsiveContainer}>
+                    <table className={styles.tablaApp}>
+                      <thead><tr><th>Fecha</th><th>Concepto</th><th>Método</th><th>Monto</th></tr></thead>
+                      <tbody>
+                        {gastosFiltradosHistorial.length === 0 ? (
+                          <tr><td colSpan={4} style={{ textAlign: 'center', color: '#94a3b8', padding: '20px' }}>No se encontraron gastos asociados a este arqueo.</td></tr>
+                        ) : gastosFiltradosHistorial.map((gasto) => (
+                          <tr key={gasto.id}>
+                            <td>{formatearFecha(gasto.created_at)}</td>
+                            <td>{gasto.concepto}</td>
+                            <td>{gasto.metodo_pago}</td>
+                            <td><strong>${gasto.monto.toLocaleString()}</strong></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
 
                   <h4>Ventas registradas en este arqueo ({ventasFiltradasHistorial.length})</h4>
 
@@ -1200,7 +1364,7 @@ export default function Home() {
                               <td><strong>${v.total.toLocaleString()}</strong></td>
                               <td>
                                 <button onClick={() => setVentaSeleccionada(v)} className={styles.btnVerConBorde}>Ver ticket</button>
-                                <button onClick={() => eliminarVenta(v.id)} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>Eliminar</button>
+                                <button aria-label={`Eliminar venta ${v.id}`} onClick={() => eliminarVenta(v.id)} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>🗑️</button>
                               </td>
                             </tr>
                           ))
@@ -1226,7 +1390,7 @@ export default function Home() {
                             ${(c.diferencia_efectivo + c.diferencia_tarjeta + c.diferencia_transferencia).toLocaleString()}
                           </td>
                           <td>
-                            <button onClick={() => eliminarCierre(c.id)} className={styles.btnEliminarConBorde}>Eliminar arqueo</button>
+                            <button aria-label="Eliminar arqueo" onClick={() => eliminarCierre(c.id)} className={styles.btnEliminarConBorde}>🗑️</button>
                           </td>
                         </tr>
                       ))}
@@ -1365,7 +1529,7 @@ export default function Home() {
                             ) : (
                               <button onClick={() => { setRecetaEditandoId(r.id); setCantEditandoVal(r.cantidad_requerida.toString()); }} className={styles.btnVerConBorde}>Editar</button>
                             )}
-                            <button aria-label="Eliminar receta" onClick={() => eliminarRecetaItem(r.id)} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>Eliminar</button>
+                            <button aria-label="Eliminar receta" onClick={() => eliminarRecetaItem(r.id)} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>🗑️</button>
                           </td>
                         </tr>
                       );
@@ -1398,7 +1562,7 @@ export default function Home() {
                         <td>${p.precio.toLocaleString()}</td>
                         <td>
                           <button onClick={() => { setProductoEditando(p); setNuevoNombre(p.nombre); setNuevoPrecio(p.precio.toString()); }} className={styles.btnVerConBorde}>Editar</button>
-                          <button onClick={async () => { await supabase.from('productos').delete().eq('id', p.id); if (usuario) obtenerProductos(usuario.id); }} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>Eliminar</button>
+                          <button aria-label={`Eliminar producto ${p.nombre}`} onClick={async () => { await supabase.from('productos').delete().eq('id', p.id); if (usuario) obtenerProductos(usuario.id); }} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>🗑️</button>
                         </td>
                       </tr>
                     ))}

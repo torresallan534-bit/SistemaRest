@@ -774,6 +774,18 @@
   padding: 24px;
 }
 
+.descripcionSeccion {
+  margin: -12px 0 20px;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.mensajeAyuda {
+  margin: 12px 0 0;
+  color: #b45309;
+  font-size: 13px;
+}
+
 .gridMetricasCaja {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -880,6 +892,13 @@
   border-color: #64748b;
   cursor: not-allowed;
   box-shadow: none;
+}
+
+.btnAgregarConBorde:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
 }
 
 /* TABLAS GENERALES CON BORDES */

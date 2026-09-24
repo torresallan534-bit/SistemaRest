@@ -11,6 +11,7 @@ RestoPOS is a Spanish-language SaaS for restaurant operations. It currently cove
 - Cash-register shifts (`jornadas`) and immutable cash closings (`cierres_caja`).
 - Sales history linked to shifts and closings.
 - Ingredient inventory, recipes/costs, and products.
+- Operating expenses by payment method, linked to the active shift and its closing.
 - Supabase authentication and persistence.
 
 ## Domain rules
@@ -39,6 +40,12 @@ Never label the opening base plus cash sales as “Efectivo de turno” in a sum
 ### Closing behavior
 
 Closing a shift records the system totals and physical totals in `cierres_caja`, associates the shift's sales with the closing, marks the shift as closed, and resets the active-shift state. Preserve the historical record; do not silently recalculate a completed closing from current sales.
+
+Expenses are cash outflows. A closing must associate the active shift's expenses with the closing and compare net amounts by payment method:
+
+- Net cash expected for counting = opening base + cash sales - cash expenses.
+- Net card amount = card sales - card expenses.
+- Net transfer amount = transfer sales - transfer expenses.
 
 ## Supabase and configuration
 
