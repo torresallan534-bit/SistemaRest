@@ -535,6 +535,11 @@
   transform: translateY(-2px);
 }
 
+.tarjetaMesa:focus-visible {
+  outline: 3px solid var(--app-accent);
+  outline-offset: 3px;
+}
+
 .mesaLibre {
   border-color: #cbd5e1;
 }

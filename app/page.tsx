@@ -1087,6 +1087,15 @@ export default function Home() {
                       key={m.id}
                       className={`${styles.tarjetaMesa} ${m.estado === 'ocupada' ? styles.mesaOcupada : styles.mesaLibre} ${mesaSeleccionada?.id === m.id ? styles.mesaSeleccionada : ''}`}
                       onClick={() => seleccionarMesa(m)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          seleccionarMesa(m);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${m.nombre}, ${m.estado === 'ocupada' ? 'ocupada' : 'libre'}`}
                     >
                       <span className={styles.badgeEstado}>{m.estado.toUpperCase()}</span>
                       <h4>{m.nombre}</h4>
