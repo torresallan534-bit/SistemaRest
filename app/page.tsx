@@ -1095,7 +1095,7 @@ export default function Home() {
                         setMenuUsuarioAbierto(false);
                         setPersonalizacionAbierta(false);
                       }}
-                      aria-expanded={usuariosAbierto}
+                      aria-expanded={usuariosModalAbierto}
                       role="menuitem"
                     >
                       Usuarios
