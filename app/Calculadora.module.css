@@ -161,6 +161,87 @@
   text-align: left;
 }
 
+.opcionesUsuario {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.panelUsuarios {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.panelUsuarios form {
+  display: grid;
+  gap: 7px;
+  margin-top: 3px;
+}
+
+.panelUsuarios input {
+  width: 100%;
+  padding: 8px 9px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  box-sizing: border-box;
+}
+
+.miembroUsuario {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #334155;
+  font-size: 12px;
+}
+
+.miembroUsuario small {
+  color: #64748b;
+  text-transform: capitalize;
+}
+
+.filaResumenDetalle,
+.filaResumenNeto {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+  font-size: 12px;
+}
+
+.resumenGastosCierre {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+  margin: 14px 0 18px;
+  padding: 12px 14px;
+  color: #475569;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.resumenGastosCierre strong {
+  color: #9a3412;
+  margin-right: 4px;
+}
+
+.filaResumenDetalle {
+  color: #64748b;
+}
+
+.filaResumenNeto {
+  color: var(--app-accent-dark);
+  font-weight: 700;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 7px;
+  margin-bottom: 7px;
+}
+
 .btnPersonalizar:hover {
   color: var(--app-accent-dark);
 }

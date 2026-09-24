@@ -32,11 +32,15 @@ interface Mesa {
   user_id?: string; 
 }
 interface CierreCaja { id: string; fecha: string; jornada_id?: string; base_inicial: number; total_sistema: number; total_neto?: number; total_gastos?: number; efectivo_sistema: number; tarjeta_sistema: number; transferencia_sistema: number; gastos_efectivo?: number; gastos_tarjeta?: number; gastos_transferencia?: number; efectivo_real: number; tarjeta_real: number; transferencia_real: number; diferencia_efectivo: number; diferencia_tarjeta: number; diferencia_transferencia: number; user_id?: string; }
+interface MiembroNegocio { id: string; username: string; role: 'mesero'; auth_user_id: string; activo: boolean; }
 
 export default function Home() {
   // Autenticación y Perfil
   const [usuario, setUsuario] = useState<User | null>(null);
   const [perfil, setPerfil] = useState<Perfil | null>(null);
+  const [propietarioId, setPropietarioId] = useState<string | null>(null);
+  const [rolActual, setRolActual] = useState<'admin' | 'mesero'>('admin');
+  const [miembrosNegocio, setMiembrosNegocio] = useState<MiembroNegocio[]>([]);
   
   // Formulario Registro
   const [nombrePersonaInput, setNombrePersonaInput] = useState('');
@@ -124,6 +128,17 @@ export default function Home() {
   const [cierreFiltroSeleccionado, setCierreFiltroSeleccionado] = useState<string>('abierta');
   const [menuUsuarioAbierto, setMenuUsuarioAbierto] = useState(false);
   const [personalizacionAbierta, setPersonalizacionAbierta] = useState(false);
+  const [usuariosAbierto, setUsuariosAbierto] = useState(false);
+  const [nuevoMeseroUsuario, setNuevoMeseroUsuario] = useState('');
+  const [nuevoMeseroClave, setNuevoMeseroClave] = useState('');
+  const [editarPerfilAbierto, setEditarPerfilAbierto] = useState(false);
+  const [perfilEditando, setPerfilEditando] = useState({
+    nombre_persona: '',
+    nombre_local: '',
+    documento: '',
+    telefono: '',
+    direccion: '',
+  });
   const [colorApp, setColorApp] = useState(() => {
     if (typeof window === 'undefined') return '#2563eb';
     return window.localStorage.getItem('restopos-color-app') || '#2563eb';
@@ -133,13 +148,34 @@ export default function Home() {
     window.localStorage.setItem('restopos-color-app', colorApp);
   }, [colorApp]);
 
+  useEffect(() => {
+    if (rolActual === 'admin' && propietarioId) {
+      obtenerMiembrosNegocio(propietarioId);
+    }
+  // The loader is intentionally kept local to this component.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rolActual, propietarioId]);
+
   const cargarPerfil = async (userId: string) => {
     const { data } = await supabase.from('perfiles').select('*').eq('id', userId).maybeSingle();
     if (data) setPerfil(data as Perfil);
   };
 
+  const obtenerContextoUsuario = async (authUserId: string) => {
+    const { data } = await supabase
+      .from('miembros_negocio')
+      .select('owner_user_id, role')
+      .eq('auth_user_id', authUserId)
+      .eq('activo', true)
+      .maybeSingle();
+    const ownerId = data?.owner_user_id || authUserId;
+    setPropietarioId(ownerId);
+    setRolActual(data?.role === 'mesero' ? 'mesero' : 'admin');
+    return ownerId;
+  };
+
   const cargarTodo = async (userId?: string) => {
-    const uId = userId || usuario?.id;
+    const uId = userId || propietarioId || usuario?.id;
     if (!uId) return;
 
     await Promise.all([
@@ -162,8 +198,9 @@ export default function Home() {
       
       if (session?.user) {
         setUsuario(session.user);
-        await cargarPerfil(session.user.id);
-        await cargarTodo(session.user.id);
+        const ownerId = await obtenerContextoUsuario(session.user.id);
+        await cargarPerfil(ownerId);
+        await cargarTodo(ownerId);
       } else {
         setUsuario(null);
       }
@@ -175,11 +212,17 @@ export default function Home() {
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
         setUsuario(session.user);
-        await cargarPerfil(session.user.id);
-        await cargarTodo(session.user.id);
+        const ownerId = await obtenerContextoUsuario(session.user.id);
+        await cargarPerfil(ownerId);
+        await cargarTodo(ownerId);
       } else {
         setUsuario(null);
         setPerfil(null);
+        setPropietarioId(null);
+        setRolActual('admin');
+        setMiembrosNegocio([]);
+        setPropietarioId(null);
+        setRolActual('admin');
       }
     });
 
@@ -198,36 +241,36 @@ export default function Home() {
       .channel('sincronizacion-restopos')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'mesas', filter: `user_id=eq.${usuario.id}` },
-        () => obtenerMesas(usuario.id)
+        { event: '*', schema: 'public', table: 'mesas', filter: `user_id=eq.${propietarioId || usuario.id}` },
+        () => obtenerMesas(propietarioId || usuario.id)
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'ventas', filter: `user_id=eq.${usuario.id}` },
+        { event: '*', schema: 'public', table: 'ventas', filter: `user_id=eq.${propietarioId || usuario.id}` },
         () => {
-          obtenerVentas(usuario.id);
+          obtenerVentas(propietarioId || usuario.id);
           obtenerJornadaActiva(usuario.id);
         }
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'jornadas', filter: `user_id=eq.${usuario.id}` },
+        { event: '*', schema: 'public', table: 'jornadas', filter: `user_id=eq.${propietarioId || usuario.id}` },
         async () => {
           await obtenerJornadaActiva(usuario.id);
-          await obtenerVentas(usuario.id);
+          await obtenerVentas(propietarioId || usuario.id);
         }
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'gastos', filter: `user_id=eq.${usuario.id}` },
-        () => obtenerGastos(usuario.id)
+        { event: '*', schema: 'public', table: 'gastos', filter: `user_id=eq.${propietarioId || usuario.id}` },
+        () => obtenerGastos(propietarioId || usuario.id)
       )
       .subscribe();
 
     return () => {
       supabase.removeChannel(canalSincronizacion);
     };
-  }, [usuario?.id]);
+  }, [usuario?.id, propietarioId]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -268,12 +311,17 @@ export default function Home() {
         ];
         await supabase.from('mesas').insert(mesasIniciales);
 
+        setPropietarioId(data.user.id);
+        setRolActual('admin');
         await cargarTodo(data.user.id);
         alert('Registro exitoso. Tu negocio fue creado con cinco mesas iniciales.');
       }
     } else {
+      const correoAcceso = emailInput.includes('@')
+        ? emailInput.trim()
+        : `${emailInput.trim().toLowerCase()}@usuarios.restopos.app`;
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: emailInput,
+        email: correoAcceso,
         password: passwordInput,
       });
 
@@ -281,8 +329,9 @@ export default function Home() {
         alert('Error de acceso: ' + error.message);
       } else if (data.user) {
         setUsuario(data.user);
-        await cargarPerfil(data.user.id);
-        await cargarTodo(data.user.id);
+        const ownerId = await obtenerContextoUsuario(data.user.id);
+        await cargarPerfil(ownerId);
+        await cargarTodo(ownerId);
       }
     }
   };
@@ -292,6 +341,72 @@ export default function Home() {
     setUsuario(null);
     setPerfil(null);
     setMenuUsuarioAbierto(false);
+  };
+
+  const abrirEdicionPerfil = () => {
+    if (!perfil) return;
+    setPerfilEditando({
+      nombre_persona: perfil.nombre_persona,
+      nombre_local: perfil.nombre_local,
+      documento: perfil.documento,
+      telefono: perfil.telefono,
+      direccion: perfil.direccion,
+    });
+    setEditarPerfilAbierto(true);
+    setMenuUsuarioAbierto(false);
+  };
+
+  const guardarPerfil = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!usuario) return;
+    const { data, error } = await supabase
+      .from('perfiles')
+      .update(perfilEditando)
+      .eq('id', usuario.id)
+      .select()
+      .single();
+    if (error) {
+      alert('No fue posible actualizar la información: ' + error.message);
+      return;
+    }
+    setPerfil(data as Perfil);
+    setEditarPerfilAbierto(false);
+  };
+
+  const obtenerMiembrosNegocio = async (ownerId = propietarioId) => {
+    if (!ownerId || rolActual !== 'admin') return;
+    const { data, error } = await supabase
+      .from('miembros_negocio')
+      .select('id, username, role, auth_user_id, activo')
+      .eq('owner_user_id', ownerId)
+      .order('created_at', { ascending: true });
+    if (error) {
+      alert('No fue posible cargar los usuarios: ' + error.message);
+      return;
+    }
+    setMiembrosNegocio((data || []) as MiembroNegocio[]);
+  };
+
+  const crearMesero = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!nuevoMeseroUsuario.trim() || nuevoMeseroClave.length < 6) {
+      return alert('Define un usuario y una clave de mínimo seis caracteres.');
+    }
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return alert('La sesión no está disponible.');
+    const response = await fetch('/api/usuarios', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify({ username: nuevoMeseroUsuario, password: nuevoMeseroClave }),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      alert(result.error || 'No fue posible crear el usuario.');
+      return;
+    }
+    setNuevoMeseroUsuario('');
+    setNuevoMeseroClave('');
+    await obtenerMiembrosNegocio();
   };
 
   // Obtener la jornada abierta
@@ -370,7 +485,7 @@ export default function Home() {
     setConceptoGasto('');
     setMontoGasto('');
     setMetodoPagoGasto('Efectivo');
-    await obtenerGastos(usuario.id);
+    await obtenerGastos(propietarioId || usuario.id);
   };
 
   const eliminarGasto = async (id: string) => {
@@ -380,7 +495,7 @@ export default function Home() {
       alert('No fue posible eliminar el gasto: ' + error.message);
       return;
     }
-    if (usuario) await obtenerGastos(usuario.id);
+    if (usuario) await obtenerGastos(propietarioId || usuario.id);
   };
 
   async function obtenerProductos(uId: string) {
@@ -477,14 +592,14 @@ export default function Home() {
     if (!nuevoNombreMesa.trim() || !usuario) return;
     await supabase.from('mesas').insert([{ nombre: nuevoNombreMesa, user_id: usuario.id, estado: 'libre' }]);
     setNuevoNombreMesa('');
-    obtenerMesas(usuario.id);
+    obtenerMesas(propietarioId || usuario.id);
   };
 
   const eliminarMesa = async (id: string) => {
     if (!confirm('¿Eliminar esta mesa?')) return;
     await supabase.from('mesas').delete().eq('id', id);
     if (mesaSeleccionada?.id === id) setMesaSeleccionada(null);
-    if (usuario) obtenerMesas(usuario.id);
+    if (usuario) obtenerMesas(propietarioId || usuario.id);
   };
 
   const guardarPedidoMesa = async () => {
@@ -521,7 +636,7 @@ export default function Home() {
 
     setNumComanda((prev) => prev + 1);
     setComandaImprimir(ticketCocina);
-    obtenerMesas(usuario.id);
+    obtenerMesas(propietarioId || usuario.id);
   };
 
   const abrirModalCobrar = () => {
@@ -600,7 +715,7 @@ export default function Home() {
       setComentarioMesa('');
       setMesaSeleccionada(null);
       setMostrarModalCobro(false);
-      await cargarTodo(usuario.id);
+      await cargarTodo(propietarioId || usuario.id);
     }
   };
 
@@ -672,14 +787,14 @@ export default function Home() {
   const eliminarVenta = async (id: number) => {
     if (!confirm(`¿Eliminar la venta #${id}?`)) return;
     await supabase.from('ventas').delete().eq('id', id);
-    if (usuario) obtenerVentas(usuario.id);
+    if (usuario) obtenerVentas(propietarioId || usuario.id);
   };
 
   const eliminarCierre = async (cierreId: string) => {
     if (!confirm('¿Eliminar cierre de caja?')) return;
     await supabase.from('ventas').update({ cierre_id: null }).eq('cierre_id', cierreId);
     await supabase.from('cierres_caja').delete().eq('id', cierreId);
-    if (usuario) cargarTodo(usuario.id);
+    if (usuario) cargarTodo(propietarioId || usuario.id);
   };
 
   const guardarRecetaMultiple = async (e: React.FormEvent) => {
@@ -700,20 +815,20 @@ export default function Home() {
     await supabase.from('recetas').insert(inserciones);
     setProdRecetaSel('');
     setLineasReceta([{ insumo_id: '', cantidad_requerida: '' }]);
-    obtenerRecetas(usuario.id);
+    obtenerRecetas(propietarioId || usuario.id);
   };
 
   const editarCantidadReceta = async (id: string) => {
     if (!cantEditandoVal || !usuario) return;
     await supabase.from('recetas').update({ cantidad_requerida: parseFloat(cantEditandoVal) }).eq('id', id);
     setRecetaEditandoId(null); setCantEditandoVal('');
-    obtenerRecetas(usuario.id);
+    obtenerRecetas(propietarioId || usuario.id);
   };
 
   const eliminarRecetaItem = async (id: string) => {
     if (!confirm('¿Eliminar ingrediente?')) return;
     await supabase.from('recetas').delete().eq('id', id);
-    if (usuario) obtenerRecetas(usuario.id);
+    if (usuario) obtenerRecetas(propietarioId || usuario.id);
   };
 
   const guardarInsumo = async (e: React.FormEvent) => {
@@ -721,7 +836,7 @@ export default function Home() {
     if (!usuario) return;
     await supabase.from('insumos').insert([{ nombre: nuevoInsumoNombre, unidad: nuevoInsumoUnidad, stock_actual: parseFloat(nuevoInsumoStock), user_id: usuario.id }]);
     setNuevoInsumoNombre(''); setNuevoInsumoStock('');
-    obtenerInsumos(usuario.id);
+    obtenerInsumos(propietarioId || usuario.id);
   };
 
   const guardarProducto = async (e: React.FormEvent) => {
@@ -735,7 +850,7 @@ export default function Home() {
       await supabase.from('productos').insert([{ nombre: nuevoNombre, precio: precioNum, user_id: usuario.id }]);
     }
     setNuevoNombre(''); setNuevoPrecio('');
-    obtenerProductos(usuario.id);
+    obtenerProductos(propietarioId || usuario.id);
   };
 
   const actualizarStockFisico = async (insumoId: string) => {
@@ -743,7 +858,7 @@ export default function Home() {
     if (!valor || !usuario) return;
     await supabase.from('insumos').update({ stock_actual: parseFloat(valor) }).eq('id', insumoId);
     setConteosFisicos((prev) => ({ ...prev, [insumoId]: '' }));
-    obtenerInsumos(usuario.id);
+    obtenerInsumos(propietarioId || usuario.id);
   };
 
   const formatearFecha = (fechaISO: string) => new Date(fechaISO).toLocaleDateString('es-CO', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -910,9 +1025,11 @@ export default function Home() {
           <button className={`${styles.btnModulo} ${modulo === 'ventas' ? styles.activeModulo : ''}`} onClick={() => setModulo('ventas')}>
             Ventas y caja
           </button>
-          <button className={`${styles.btnModulo} ${modulo === 'produccion' ? styles.activeModulo : ''}`} onClick={() => setModulo('produccion')}>
-            Producción y costos
-          </button>
+          {rolActual === 'admin' && (
+            <button className={`${styles.btnModulo} ${modulo === 'produccion' ? styles.activeModulo : ''}`} onClick={() => setModulo('produccion')}>
+              Producción y costos
+            </button>
+          )}
           <div className={styles.menuUsuario}>
             <button
               type="button"
@@ -942,20 +1059,70 @@ export default function Home() {
                     <span>{usuario.email}</span>
                   </div>
                 </div>
-                <div className={styles.detallePerfil}>
-                  <div><span>Negocio</span><strong>{perfil?.nombre_local || 'RestoPOS Pro'}</strong></div>
-                  {perfil?.telefono && <div><span>Teléfono</span><strong>{perfil.telefono}</strong></div>}
-                  {perfil?.direccion && <div><span>Dirección</span><strong>{perfil.direccion}</strong></div>}
+                <div className={styles.opcionesUsuario} role="none">
+                  {rolActual === 'admin' && (
+                    <button
+                      type="button"
+                      className={styles.btnPersonalizar}
+                      onClick={abrirEdicionPerfil}
+                      role="menuitem"
+                    >
+                      Editar información
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className={styles.btnPersonalizar}
+                    onClick={() => setPersonalizacionAbierta(!personalizacionAbierta)}
+                    aria-expanded={personalizacionAbierta}
+                    role="menuitem"
+                  >
+                    <span>Personalizar aplicación</span>
+                    <span className={styles.indicadorPersonalizacion}>{personalizacionAbierta ? '⌃' : '›'}</span>
+                  </button>
+                  {rolActual === 'admin' && (
+                    <button
+                      type="button"
+                      className={styles.btnPersonalizar}
+                      onClick={() => {
+                        setUsuariosAbierto(!usuariosAbierto);
+                        setPersonalizacionAbierta(false);
+                      }}
+                      aria-expanded={usuariosAbierto}
+                      role="menuitem"
+                    >
+                      Usuarios
+                    </button>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  className={styles.btnPersonalizar}
-                  onClick={() => setPersonalizacionAbierta(!personalizacionAbierta)}
-                  aria-expanded={personalizacionAbierta}
-                >
-                  <span>Personalización</span>
-                  <span className={styles.indicadorPersonalizacion}>{personalizacionAbierta ? '⌃' : '›'}</span>
-                </button>
+                {usuariosAbierto && rolActual === 'admin' && (
+                  <div className={styles.panelUsuarios}>
+                    <strong>Usuarios del negocio</strong>
+                    <form onSubmit={crearMesero}>
+                      <input
+                        value={nuevoMeseroUsuario}
+                        onChange={(e) => setNuevoMeseroUsuario(e.target.value)}
+                        placeholder="Usuario del mesero"
+                        pattern="[A-Za-z0-9._-]+"
+                        required
+                      />
+                      <input
+                        type="password"
+                        value={nuevoMeseroClave}
+                        onChange={(e) => setNuevoMeseroClave(e.target.value)}
+                        placeholder="Clave temporal"
+                        minLength={6}
+                        required
+                      />
+                      <button type="submit" className={styles.btnAgregarConBorde}>Crear mesero</button>
+                    </form>
+                    {miembrosNegocio.map((miembro) => (
+                      <div key={miembro.id} className={styles.miembroUsuario}>
+                        <span>{miembro.username}</span><small>{miembro.role}</small>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {personalizacionAbierta && (
                   <div className={styles.panelPersonalizacion}>
                     <div className={styles.tituloPersonalizacion}>
@@ -1008,9 +1175,9 @@ export default function Home() {
         <div>
           <div className={styles.subBarra}>
             <button className={subPestanaVentas === 'mesas' ? styles.subActive : ''} onClick={() => setSubPestanaVentas('mesas')}>Mesas y pedidos</button>
-            <button className={subPestanaVentas === 'caja' ? styles.subActive : ''} onClick={() => setSubPestanaVentas('caja')}>Cierre de caja</button>
-            <button className={subPestanaVentas === 'gastos' ? styles.subActive : ''} onClick={() => setSubPestanaVentas('gastos')}>Gastos</button>
-            <button className={subPestanaVentas === 'historial' ? styles.subActive : ''} onClick={() => setSubPestanaVentas('historial')}>Historial</button>
+            {rolActual === 'admin' && <button className={subPestanaVentas === 'caja' ? styles.subActive : ''} onClick={() => setSubPestanaVentas('caja')}>Cierre de caja</button>}
+            {rolActual === 'admin' && <button className={subPestanaVentas === 'gastos' ? styles.subActive : ''} onClick={() => setSubPestanaVentas('gastos')}>Gastos</button>}
+            {rolActual === 'admin' && <button className={subPestanaVentas === 'historial' ? styles.subActive : ''} onClick={() => setSubPestanaVentas('historial')}>Historial</button>}
           </div>
 
           {/* MESAS */}
@@ -1042,20 +1209,28 @@ export default function Home() {
                   <div className={styles.resumenArqueoBox}>
                     <div className={styles.filaResumen}><span>Base Inicial:</span><strong>${baseEfectivoJornada.toLocaleString()}</strong></div>
                     <div className={styles.filaResumen}><span>Efectivo:</span><strong>${totalEfectivoHoy.toLocaleString()}</strong></div>
+                    <div className={styles.filaResumenDetalle}><span>Gastos en efectivo:</span><strong>−${totalGastosEfectivoHoy.toLocaleString()}</strong></div>
+                    <div className={styles.filaResumenNeto}><span>Efectivo neto:</span><strong>${efectivoEsperadoParaConteoCierre.toLocaleString()}</strong></div>
                     <div className={styles.filaResumen}><span>Tarjeta:</span><strong>${totalTarjetaHoy.toLocaleString()}</strong></div>
+                    <div className={styles.filaResumenDetalle}><span>Gastos con tarjeta:</span><strong>−${totalGastosTarjetaHoy.toLocaleString()}</strong></div>
+                    <div className={styles.filaResumenNeto}><span>Tarjeta neta:</span><strong>${tarjetaSistemaNeto.toLocaleString()}</strong></div>
                     <div className={styles.filaResumen}><span>Transferencia:</span><strong>${totalTransferenciaHoy.toLocaleString()}</strong></div>
+                    <div className={styles.filaResumenDetalle}><span>Gastos por transferencia:</span><strong>−${totalGastosTransferenciaHoy.toLocaleString()}</strong></div>
+                    <div className={styles.filaResumenNeto}><span>Transferencia neta:</span><strong>${transferenciaSistemaNeta.toLocaleString()}</strong></div>
                     <div className={styles.filaResumenTotal}><span>Total neto del turno:</span><strong>${(baseEfectivoJornada + totalHoy - (totalGastosEfectivoHoy + totalGastosTarjetaHoy + totalGastosTransferenciaHoy)).toLocaleString()}</strong></div>
                   </div>
                 )}
               </div>
 
               <div className={styles.seccionMesasGrid}>
-                <div className={styles.headerConBoton}>
-                  <form onSubmit={agregarMesa} style={{ display: 'flex', gap: '8px', width: '100%' }}>
-                    <input type="text" placeholder="Nombre de mesa" className={styles.inputChico} value={nuevoNombreMesa} onChange={(e) => setNuevoNombreMesa(e.target.value)} required />
-                    <button type="submit" className={styles.btnAgregarConBorde}>＋ Agregar Mesa</button>
-                  </form>
-                </div>
+                {rolActual === 'admin' && (
+                  <div className={styles.headerConBoton}>
+                    <form onSubmit={agregarMesa} style={{ display: 'flex', gap: '8px', width: '100%' }}>
+                      <input type="text" placeholder="Nombre de mesa" className={styles.inputChico} value={nuevoNombreMesa} onChange={(e) => setNuevoNombreMesa(e.target.value)} required />
+                      <button type="submit" className={styles.btnAgregarConBorde}>＋ Agregar Mesa</button>
+                    </form>
+                  </div>
+                )}
 
                 <div className={styles.reticulaMesas}>
                   {mesas.map((m) => (
@@ -1076,7 +1251,7 @@ export default function Home() {
                       <span className={styles.badgeEstado}>{m.estado.toUpperCase()}</span>
                       <h4>{m.nombre}</h4>
                       <p>{m.pedidos ? m.pedidos.length : 0} ítems</p>
-                      <button aria-label={`Eliminar ${m.nombre}`} onClick={(e) => { e.stopPropagation(); eliminarMesa(m.id); }} className={styles.btnTrashMesa}>🗑️</button>
+                      {rolActual === 'admin' && <button aria-label={`Eliminar ${m.nombre}`} onClick={(e) => { e.stopPropagation(); eliminarMesa(m.id); }} className={styles.btnTrashMesa}>🗑️</button>}
                     </div>
                   ))}
                 </div>
@@ -1217,6 +1392,12 @@ export default function Home() {
                 <div className={styles.cardMetrica}><span>Efectivo</span><h3 style={{ color: '#16a34a' }}>${efectivoEsperadoParaConteoCierre.toLocaleString()}</h3></div>
                 <div className={styles.cardMetrica}><span>Tarjeta</span><h3 style={{ color: '#9333ea' }}>${tarjetaSistemaNeto.toLocaleString()}</h3></div>
                 <div className={styles.cardMetrica}><span>Transferencia</span><h3 style={{ color: '#ea580c' }}>${transferenciaSistemaNeta.toLocaleString()}</h3></div>
+              </div>
+              <div className={styles.resumenGastosCierre}>
+                <strong>Gastos descontados del turno</strong>
+                <span>Efectivo: −${totalGastosEfectivoHoy.toLocaleString()}</span>
+                <span>Tarjeta: −${totalGastosTarjetaHoy.toLocaleString()}</span>
+                <span>Transferencia: −${totalGastosTransferenciaHoy.toLocaleString()}</span>
               </div>
 
               <div className={styles.formArqueoCaja}>
@@ -1589,6 +1770,25 @@ export default function Home() {
       )}
 
       {/* MODAL TICKET DE COMANDA PARA COCINA */}
+      {editarPerfilAbierto && (
+        <div className={styles.overlayModal} onClick={() => setEditarPerfilAbierto(false)}>
+          <form className={styles.modalContent} onClick={(e) => e.stopPropagation()} onSubmit={guardarPerfil}>
+            <h2>Editar información</h2>
+            <div className={styles.grid2Campos}>
+              <label>Nombre<input value={perfilEditando.nombre_persona} onChange={(e) => setPerfilEditando({ ...perfilEditando, nombre_persona: e.target.value })} required /></label>
+              <label>Negocio<input value={perfilEditando.nombre_local} onChange={(e) => setPerfilEditando({ ...perfilEditando, nombre_local: e.target.value })} required /></label>
+              <label>Documento<input value={perfilEditando.documento} onChange={(e) => setPerfilEditando({ ...perfilEditando, documento: e.target.value })} required /></label>
+              <label>Teléfono<input value={perfilEditando.telefono} onChange={(e) => setPerfilEditando({ ...perfilEditando, telefono: e.target.value })} required /></label>
+              <label style={{ gridColumn: '1 / -1' }}>Dirección<input value={perfilEditando.direccion} onChange={(e) => setPerfilEditando({ ...perfilEditando, direccion: e.target.value })} required /></label>
+            </div>
+            <div className={styles.accionesModal}>
+              <button type="submit" className={styles.btnAgregarConBorde}>Guardar información</button>
+              <button type="button" className={styles.btnEliminarConBorde} onClick={() => setEditarPerfilAbierto(false)}>Cancelar</button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {comandaImprimir && (
         <div className={styles.overlayModal} onClick={() => setComandaImprimir(null)}>
           <div className={styles.modalContentTicket} onClick={(e) => e.stopPropagation()}>
