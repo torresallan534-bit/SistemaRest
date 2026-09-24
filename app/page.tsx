@@ -1396,7 +1396,7 @@ export default function Home() {
                           <td>${c.total_sistema.toLocaleString()}</td>
                           <td>{ventas.filter((v) => v.cierre_id === c.id).length}</td>
                           <td>{gastos.filter((g) => g.cierre_id === c.id).length}</td>
-                          <td style={{ color: c.diferencia_efectivo < 0 ? '#dc2626' : '#16a34a', fontWeight: 'bold' }}>
+                          <td style={{ color: (c.diferencia_efectivo + c.diferencia_tarjeta + c.diferencia_transferencia) < 0 ? '#dc2626' : '#16a34a', fontWeight: 'bold' }}>
                             ${(c.diferencia_efectivo + c.diferencia_tarjeta + c.diferencia_transferencia).toLocaleString()}
                           </td>
                           <td>
