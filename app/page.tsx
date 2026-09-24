@@ -128,7 +128,8 @@ export default function Home() {
   const [cierreFiltroSeleccionado, setCierreFiltroSeleccionado] = useState<string>('abierta');
   const [menuUsuarioAbierto, setMenuUsuarioAbierto] = useState(false);
   const [personalizacionAbierta, setPersonalizacionAbierta] = useState(false);
-  const [usuariosAbierto, setUsuariosAbierto] = useState(false);
+  const [usuariosModalAbierto, setUsuariosModalAbierto] = useState(false);
+  const [creandoMesero, setCreandoMesero] = useState(false);
   const [nuevoMeseroUsuario, setNuevoMeseroUsuario] = useState('');
   const [nuevoMeseroClave, setNuevoMeseroClave] = useState('');
   const [editarPerfilAbierto, setEditarPerfilAbierto] = useState(false);
@@ -394,19 +395,24 @@ export default function Home() {
     }
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return alert('La sesión no está disponible.');
-    const response = await fetch('/api/usuarios', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-      body: JSON.stringify({ username: nuevoMeseroUsuario, password: nuevoMeseroClave }),
-    });
-    const result = await response.json();
-    if (!response.ok) {
-      alert(result.error || 'No fue posible crear el usuario.');
-      return;
+    setCreandoMesero(true);
+    try {
+      const response = await fetch('/api/usuarios', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ username: nuevoMeseroUsuario, password: nuevoMeseroClave }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        alert(result.error || 'No fue posible crear el usuario.');
+        return;
+      }
+      setNuevoMeseroUsuario('');
+      setNuevoMeseroClave('');
+      await obtenerMiembrosNegocio();
+    } finally {
+      setCreandoMesero(false);
     }
-    setNuevoMeseroUsuario('');
-    setNuevoMeseroClave('');
-    await obtenerMiembrosNegocio();
   };
 
   // Obtener la jornada abierta
@@ -1085,7 +1091,8 @@ export default function Home() {
                       type="button"
                       className={styles.btnPersonalizar}
                       onClick={() => {
-                        setUsuariosAbierto(!usuariosAbierto);
+                        setUsuariosModalAbierto(true);
+                        setMenuUsuarioAbierto(false);
                         setPersonalizacionAbierta(false);
                       }}
                       aria-expanded={usuariosAbierto}
@@ -1095,34 +1102,6 @@ export default function Home() {
                     </button>
                   )}
                 </div>
-                {usuariosAbierto && rolActual === 'admin' && (
-                  <div className={styles.panelUsuarios}>
-                    <strong>Usuarios del negocio</strong>
-                    <form onSubmit={crearMesero}>
-                      <input
-                        value={nuevoMeseroUsuario}
-                        onChange={(e) => setNuevoMeseroUsuario(e.target.value)}
-                        placeholder="Usuario del mesero"
-                        pattern="[A-Za-z0-9._-]+"
-                        required
-                      />
-                      <input
-                        type="password"
-                        value={nuevoMeseroClave}
-                        onChange={(e) => setNuevoMeseroClave(e.target.value)}
-                        placeholder="Clave temporal"
-                        minLength={6}
-                        required
-                      />
-                      <button type="submit" className={styles.btnAgregarConBorde}>Crear mesero</button>
-                    </form>
-                    {miembrosNegocio.map((miembro) => (
-                      <div key={miembro.id} className={styles.miembroUsuario}>
-                        <span>{miembro.username}</span><small>{miembro.role}</small>
-                      </div>
-                    ))}
-                  </div>
-                )}
                 {personalizacionAbierta && (
                   <div className={styles.panelPersonalizacion}>
                     <div className={styles.tituloPersonalizacion}>
@@ -1770,21 +1749,67 @@ export default function Home() {
       )}
 
       {/* MODAL TICKET DE COMANDA PARA COCINA */}
+      {usuariosModalAbierto && rolActual === 'admin' && (
+        <div className={styles.overlayModal} onClick={() => setUsuariosModalAbierto(false)}>
+          <section className={styles.modalPantallaCompleta} onClick={(e) => e.stopPropagation()} aria-labelledby="usuarios-title">
+            <header className={styles.encabezadoModalPagina}>
+              <div>
+                <span className={styles.etiquetaModal}>Administración del negocio</span>
+                <h2 id="usuarios-title">Usuarios y accesos</h2>
+                <p>Crea y administra los accesos del personal que trabaja en {perfil?.nombre_local || 'tu negocio'}.</p>
+              </div>
+              <button type="button" className={styles.btnCerrarModal} onClick={() => setUsuariosModalAbierto(false)} aria-label="Cerrar usuarios">×</button>
+            </header>
+            <div className={styles.contenidoModalPagina}>
+              <div className={styles.tarjetaGestionUsuarios}>
+                <span className={styles.iconoGestion}>+</span>
+                <div>
+                  <h3>Crear acceso de mesero</h3>
+                  <p>El mesero podrá ingresar desde el acceso principal y solo verá mesas y pedidos.</p>
+                </div>
+                <form onSubmit={crearMesero} className={styles.formUsuarioCompleto}>
+                  <label htmlFor="usuario-mesero">Usuario de acceso</label>
+                  <input id="usuario-mesero" value={nuevoMeseroUsuario} onChange={(e) => setNuevoMeseroUsuario(e.target.value)} placeholder="Ejemplo: areparamesero1" pattern="[A-Za-z0-9._-]+" required />
+                  <small>Usa letras, números, puntos, guiones o guiones bajos.</small>
+                  <label htmlFor="clave-mesero">Clave temporal</label>
+                  <input id="clave-mesero" type="password" value={nuevoMeseroClave} onChange={(e) => setNuevoMeseroClave(e.target.value)} placeholder="Mínimo 6 caracteres" minLength={6} required />
+                  <button type="submit" className={styles.btnAgregarConBorde} disabled={creandoMesero}>
+                    {creandoMesero ? 'Creando acceso...' : 'Crear usuario mesero'}
+                  </button>
+                </form>
+              </div>
+              <div className={styles.listaGestionUsuarios}>
+                <div className={styles.tituloListaUsuarios}>
+                  <div><h3>Usuarios registrados</h3><p>{miembrosNegocio.length} acceso(s) configurado(s)</p></div>
+                  <span className={styles.badgeRol}>Administrador</span>
+                </div>
+                {miembrosNegocio.length === 0 ? (
+                  <div className={styles.estadoVacioUsuarios}><strong>Aún no hay meseros registrados</strong><span>Crea el primer acceso para tu equipo.</span></div>
+                ) : miembrosNegocio.map((miembro) => (
+                  <div key={miembro.id} className={styles.filaUsuarioCompleta}>
+                    <span className={styles.avatarUsuarioLista}>{miembro.username.charAt(0).toUpperCase()}</span>
+                    <div><strong>{miembro.username}</strong><span>Acceso de mesero</span></div>
+                    <span className={miembro.activo ? styles.estadoActivo : styles.estadoInactivo}>{miembro.activo ? 'Activo' : 'Inactivo'}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+
       {editarPerfilAbierto && (
         <div className={styles.overlayModal} onClick={() => setEditarPerfilAbierto(false)}>
-          <form className={styles.modalContent} onClick={(e) => e.stopPropagation()} onSubmit={guardarPerfil}>
-            <h2>Editar información</h2>
-            <div className={styles.grid2Campos}>
-              <label>Nombre<input value={perfilEditando.nombre_persona} onChange={(e) => setPerfilEditando({ ...perfilEditando, nombre_persona: e.target.value })} required /></label>
-              <label>Negocio<input value={perfilEditando.nombre_local} onChange={(e) => setPerfilEditando({ ...perfilEditando, nombre_local: e.target.value })} required /></label>
-              <label>Documento<input value={perfilEditando.documento} onChange={(e) => setPerfilEditando({ ...perfilEditando, documento: e.target.value })} required /></label>
-              <label>Teléfono<input value={perfilEditando.telefono} onChange={(e) => setPerfilEditando({ ...perfilEditando, telefono: e.target.value })} required /></label>
-              <label style={{ gridColumn: '1 / -1' }}>Dirección<input value={perfilEditando.direccion} onChange={(e) => setPerfilEditando({ ...perfilEditando, direccion: e.target.value })} required /></label>
+          <form className={styles.modalPerfil} onClick={(e) => e.stopPropagation()} onSubmit={guardarPerfil}>
+            <div className={styles.encabezadoModalFormulario}><div><span className={styles.etiquetaModal}>Configuración del negocio</span><h2>Editar información</h2><p>Mantén actualizados los datos que identifican tu restaurante.</p></div><button type="button" className={styles.btnCerrarModal} onClick={() => setEditarPerfilAbierto(false)} aria-label="Cerrar edición">×</button></div>
+            <div className={styles.formularioPerfil}>
+              <label htmlFor="perfil-nombre">Nombre completo<input id="perfil-nombre" value={perfilEditando.nombre_persona} onChange={(e) => setPerfilEditando({ ...perfilEditando, nombre_persona: e.target.value })} required /></label>
+              <label htmlFor="perfil-negocio">Nombre del negocio<input id="perfil-negocio" value={perfilEditando.nombre_local} onChange={(e) => setPerfilEditando({ ...perfilEditando, nombre_local: e.target.value })} required /></label>
+              <label htmlFor="perfil-documento">Documento<input id="perfil-documento" value={perfilEditando.documento} onChange={(e) => setPerfilEditando({ ...perfilEditando, documento: e.target.value })} required /></label>
+              <label htmlFor="perfil-telefono">Teléfono<input id="perfil-telefono" value={perfilEditando.telefono} onChange={(e) => setPerfilEditando({ ...perfilEditando, telefono: e.target.value })} required /></label>
+              <label htmlFor="perfil-direccion" className={styles.campoCompleto}>Dirección<input id="perfil-direccion" value={perfilEditando.direccion} onChange={(e) => setPerfilEditando({ ...perfilEditando, direccion: e.target.value })} required /></label>
             </div>
-            <div className={styles.accionesModal}>
-              <button type="submit" className={styles.btnAgregarConBorde}>Guardar información</button>
-              <button type="button" className={styles.btnEliminarConBorde} onClick={() => setEditarPerfilAbierto(false)}>Cancelar</button>
-            </div>
+            <div className={styles.accionesModal}><button type="button" className={styles.btnCancelarModal} onClick={() => setEditarPerfilAbierto(false)}>Cancelar</button><button type="submit" className={styles.btnAgregarConBorde}>Guardar información</button></div>
           </form>
         </div>
       )}

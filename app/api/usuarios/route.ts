@@ -7,8 +7,11 @@ export async function POST(request: Request) {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const authorization = request.headers.get('authorization');
-  if (!serviceRoleKey || !supabaseUrl || !authorization?.startsWith('Bearer ')) {
-    return NextResponse.json({ error: 'La configuración segura de usuarios no está disponible.' }, { status: 503 });
+  if (!serviceRoleKey) {
+    return NextResponse.json({ error: 'Falta configurar SUPABASE_SERVICE_ROLE_KEY en las variables de entorno de Vercel. Después de agregarla, realiza un nuevo despliegue.' }, { status: 503 });
+  }
+  if (!supabaseUrl || !authorization?.startsWith('Bearer ')) {
+    return NextResponse.json({ error: 'La sesión no está disponible. Cierra sesión, vuelve a ingresar e inténtalo de nuevo.' }, { status: 401 });
   }
 
   const accessToken = authorization.slice('Bearer '.length);
