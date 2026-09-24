@@ -99,6 +99,7 @@ export default function Home() {
   const [efectivoReal, setEfectivoReal] = useState('');
   const [tarjetaReal, setTarjetaReal] = useState('');
   const [transferenciaReal, setTransferenciaReal] = useState('');
+  const [procesandoCierre, setProcesandoCierre] = useState(false);
   const [conceptoGasto, setConceptoGasto] = useState('');
   const [montoGasto, setMontoGasto] = useState('');
   const [metodoPagoGasto, setMetodoPagoGasto] = useState<Gasto['metodo_pago']>('Efectivo');
@@ -605,7 +606,7 @@ export default function Home() {
 
   // CIERRE DE ARQUEO / TURNO DEFINITIVO
   const realizarCierreCaja = async () => {
-    if (!usuario || !jornadaId) return alert('No hay un turno activo para cerrar');
+    if (!usuario || !jornadaId || procesandoCierre) return;
     if (!confirm('¿Seguro de realizar el cierre de turno? El arqueo quedará congelado y guardado en el historial.')) return;
 
     const valoresReales = [efectivoReal, tarjetaReal, transferenciaReal].map(Number);
@@ -639,57 +640,32 @@ export default function Home() {
       user_id: usuario.id,
     };
 
-    const { data: cierreGuardado, error } = await supabase.from('cierres_caja').insert([cierre]).select();
+    setProcesandoCierre(true);
+    try {
+      const { data: cierreGuardado, error } = await supabase.rpc('cerrar_turno_atomic', {
+        p_jornada_id: jornadaId,
+        p_cierre: cierre,
+      });
 
-    if (error) {
-      alert('Error en el cierre: ' + error.message);
-    } else if (cierreGuardado && cierreGuardado[0]) {
-      const nuevoCierreId = cierreGuardado[0].id;
+      if (error) {
+        alert('No fue posible completar el cierre: ' + error.message);
+      } else if (cierreGuardado) {
+        alert('Arqueo completado y guardado en el historial.');
 
-      // 1. Vincular masivamente las ventas de esta jornada al nuevo cierre_id
-      const { error: ventasError } = await supabase
-        .from('ventas')
-        .update({ cierre_id: nuevoCierreId })
-        .eq('jornada_id', jornadaId);
-      if (ventasError) {
-        alert('El cierre se guardó, pero no fue posible vincular las ventas: ' + ventasError.message);
-        return;
+        // Resetear el estado local para dejar el sistema preparado para un nuevo turno en $0
+        setCajaAbierta(false);
+        setBaseEfectivoJornada(0);
+        setJornadaId(null);
+        setBaseEfectivoInput('');
+        setEfectivoReal('');
+        setTarjetaReal('');
+        setTransferenciaReal('');
+        setMesaSeleccionada(null);
+
+        await cargarTodo(usuario.id);
       }
-
-      const { error: gastosError } = await supabase
-        .from('gastos')
-        .update({ cierre_id: nuevoCierreId })
-        .eq('jornada_id', jornadaId)
-        .is('cierre_id', null);
-      if (gastosError) {
-        alert('El cierre se guardó, pero no fue posible vincular los gastos: ' + gastosError.message);
-        return;
-      }
-
-      // 2. Marcar la jornada como cerrada
-      const { error: jornadaError } = await supabase
-        .from('jornadas')
-        .update({ estado: 'cerrada' })
-        .eq('id', jornadaId);
-      if (jornadaError) {
-        alert('El cierre se guardó, pero no fue posible cerrar la jornada: ' + jornadaError.message);
-        return;
-      }
-
-      alert('Arqueo completado y guardado en el historial.');
-
-      // 3. Resetear el estado local para dejar el sistema preparado para un nuevo turno en $0
-      setCajaAbierta(false);
-      setBaseEfectivoJornada(0);
-      setJornadaId(null);
-      setBaseEfectivoInput('');
-      setEfectivoReal('');
-      setTarjetaReal('');
-      setTransferenciaReal('');
-      setMesaSeleccionada(null);
-
-      // Recargar todo desde Supabase inmediatamente para sincronizar el cierre_id en las ventas locales
-      await cargarTodo(usuario.id);
+    } finally {
+      setProcesandoCierre(false);
     }
   };
 
@@ -1275,8 +1251,8 @@ export default function Home() {
                   </div>
                 </div>
 
-                <button className={styles.btnCierreAccion} onClick={realizarCierreCaja} disabled={!cajaAbierta}>
-                  Cerrar y guardar arqueo
+                <button className={styles.btnCierreAccion} onClick={realizarCierreCaja} disabled={!cajaAbierta || procesandoCierre}>
+                  {procesandoCierre ? 'Guardando cierre...' : 'Cerrar y guardar arqueo'}
                 </button>
               </div>
 
