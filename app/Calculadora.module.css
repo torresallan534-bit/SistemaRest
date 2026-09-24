@@ -775,9 +775,17 @@
 }
 
 .descripcionSeccion {
-  margin: -12px 0 20px;
+  margin: 0;
   color: #64748b;
   font-size: 14px;
+}
+
+.encabezadoSeccion {
+  margin-bottom: 20px;
+}
+
+.encabezadoSeccion h2 {
+  margin: 0 0 8px;
 }
 
 .mensajeAyuda {

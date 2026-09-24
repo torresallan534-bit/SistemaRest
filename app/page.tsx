@@ -1135,10 +1135,12 @@ export default function Home() {
 
           {subPestanaVentas === 'gastos' && (
             <div className={styles.seccionCaja}>
-              <h2>Registro de gastos</h2>
-              <p className={styles.descripcionSeccion}>
+              <div className={styles.encabezadoSeccion}>
+                <h2>Registro de gastos</h2>
+                <p className={styles.descripcionSeccion}>
                 Registra las salidas de dinero del turno y asócialas al medio de pago correspondiente.
-              </p>
+                </p>
+              </div>
 
               <div className={styles.gridMetricasCaja}>
                 <div className={styles.cardMetrica}><span>Gastos del turno</span><h3>${(totalGastosEfectivoHoy + totalGastosTarjetaHoy + totalGastosTransferenciaHoy).toLocaleString()}</h3></div>
@@ -1377,7 +1379,7 @@ export default function Home() {
                 <div className={styles.tablaResponsiveContainer}>
                   <table className={styles.tablaApp}>
                     <thead>
-                      <tr><th>Fecha Arqueo</th><th>Base</th><th>Total Sistema</th><th>Efectivo Real</th><th>Diferencia</th><th>Acciones</th></tr>
+                      <tr><th>Fecha del arqueo</th><th>Base</th><th>Total del sistema</th><th>Ventas</th><th>Gastos</th><th>Diferencia</th><th>Acciones</th></tr>
                     </thead>
                     <tbody>
                       {cierres.map((c) => (
@@ -1385,11 +1387,13 @@ export default function Home() {
                           <td>{formatearFecha(c.fecha)}</td>
                           <td>${c.base_inicial?.toLocaleString() || 0}</td>
                           <td>${c.total_sistema.toLocaleString()}</td>
-                          <td>${c.efectivo_real.toLocaleString()}</td>
+                          <td>{ventas.filter((v) => v.cierre_id === c.id).length}</td>
+                          <td>{gastos.filter((g) => g.cierre_id === c.id).length}</td>
                           <td style={{ color: c.diferencia_efectivo < 0 ? '#dc2626' : '#16a34a', fontWeight: 'bold' }}>
                             ${(c.diferencia_efectivo + c.diferencia_tarjeta + c.diferencia_transferencia).toLocaleString()}
                           </td>
                           <td>
+                            <button onClick={() => { setCierreFiltroSeleccionado(c.id); setSubPestanaHistorial('ventas'); }} className={styles.btnVerConBorde}>Ver registros</button>
                             <button aria-label="Eliminar arqueo" onClick={() => eliminarCierre(c.id)} className={styles.btnEliminarConBorde}>🗑️</button>
                           </td>
                         </tr>
