@@ -458,9 +458,9 @@ export default function Home() {
 
   const tarjetaSistemaNeto = totalTarjetaHoy - totalGastosTarjetaHoy;
   const transferenciaSistemaNeta = totalTransferenciaHoy - totalGastosTransferenciaHoy;
-  const difEfectivo = efectivoReal !== '' ? (parseFloat(efectivoReal) || 0) - efectivoEsperadoParaConteoCierre : null;
-  const difTarjeta = tarjetaReal !== '' ? (parseFloat(tarjetaReal) || 0) - tarjetaSistemaNeto : null;
-  const difTransferencia = transferenciaReal !== '' ? (parseFloat(transferenciaReal) || 0) - transferenciaSistemaNeta : null;
+  const difEfectivo = efectivoReal !== '' ? Number(efectivoReal) - efectivoEsperadoParaConteoCierre : null;
+  const difTarjeta = tarjetaReal !== '' ? Number(tarjetaReal) - tarjetaSistemaNeto : null;
+  const difTransferencia = transferenciaReal !== '' ? Number(transferenciaReal) - transferenciaSistemaNeta : null;
 
   const seleccionarMesa = (m: Mesa) => {
     if (!cajaAbierta) return alert('Debes abrir la caja antes de iniciar el turno.');
@@ -608,9 +608,15 @@ export default function Home() {
     if (!usuario || !jornadaId) return alert('No hay un turno activo para cerrar');
     if (!confirm('¿Seguro de realizar el cierre de turno? El arqueo quedará congelado y guardado en el historial.')) return;
 
-    const efReal = parseFloat(efectivoReal) || 0;
-    const tarReal = parseFloat(tarjetaReal) || 0;
-    const transReal = parseFloat(transferenciaReal) || 0;
+    const valoresReales = [efectivoReal, tarjetaReal, transferenciaReal].map(Number);
+    if ([efectivoReal, tarjetaReal, transferenciaReal].some((valor) => valor.trim() === '')) {
+      return alert('Ingresa el conteo real de efectivo, tarjeta y transferencia antes de cerrar el turno.');
+    }
+    if (valoresReales.some((valor) => !Number.isFinite(valor) || valor < 0)) {
+      return alert('Los valores contados deben ser números válidos iguales o mayores que cero.');
+    }
+
+    const [efReal, tarReal, transReal] = valoresReales;
 
     const cierre = {
       jornada_id: jornadaId,
@@ -641,22 +647,34 @@ export default function Home() {
       const nuevoCierreId = cierreGuardado[0].id;
 
       // 1. Vincular masivamente las ventas de esta jornada al nuevo cierre_id
-      await supabase
+      const { error: ventasError } = await supabase
         .from('ventas')
         .update({ cierre_id: nuevoCierreId })
         .eq('jornada_id', jornadaId);
+      if (ventasError) {
+        alert('El cierre se guardó, pero no fue posible vincular las ventas: ' + ventasError.message);
+        return;
+      }
 
-      await supabase
+      const { error: gastosError } = await supabase
         .from('gastos')
         .update({ cierre_id: nuevoCierreId })
         .eq('jornada_id', jornadaId)
         .is('cierre_id', null);
+      if (gastosError) {
+        alert('El cierre se guardó, pero no fue posible vincular los gastos: ' + gastosError.message);
+        return;
+      }
 
       // 2. Marcar la jornada como cerrada
-      await supabase
+      const { error: jornadaError } = await supabase
         .from('jornadas')
         .update({ estado: 'cerrada' })
         .eq('id', jornadaId);
+      if (jornadaError) {
+        alert('El cierre se guardó, pero no fue posible cerrar la jornada: ' + jornadaError.message);
+        return;
+      }
 
       alert('Arqueo completado y guardado en el historial.');
 
@@ -1050,7 +1068,7 @@ export default function Home() {
                     <div className={styles.filaResumen}><span>Efectivo:</span><strong>${totalEfectivoHoy.toLocaleString()}</strong></div>
                     <div className={styles.filaResumen}><span>Tarjeta:</span><strong>${totalTarjetaHoy.toLocaleString()}</strong></div>
                     <div className={styles.filaResumen}><span>Transferencia:</span><strong>${totalTransferenciaHoy.toLocaleString()}</strong></div>
-                    <div className={styles.filaResumenTotal}><span>Total en Caja:</span><strong>${(baseEfectivoJornada + totalHoy).toLocaleString()}</strong></div>
+                    <div className={styles.filaResumenTotal}><span>Total neto del turno:</span><strong>${(baseEfectivoJornada + totalHoy - (totalGastosEfectivoHoy + totalGastosTarjetaHoy + totalGastosTransferenciaHoy)).toLocaleString()}</strong></div>
                   </div>
                 )}
               </div>
