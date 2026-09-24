@@ -30,9 +30,9 @@ ventas.filter((venta) => venta.jornada_id === jornadaId && !venta.cierre_id)
 
 Keep these concepts separate in both code and UI:
 
-- **Efectivo de turno**: cash sales collected during the active shift; it does not include the opening base.
+- **Efectivo** in the closing summary: expected cash after adding the opening base and cash sales, then subtracting cash expenses.
 - **Base del turno**: cash available when the shift opens.
-- **Efectivo esperado para el conteo**: opening base plus shift cash sales; use it only to calculate the physical closing difference.
+- **Efectivo esperado para el conteo**: opening base plus shift cash sales minus cash expenses; use it only to calculate the physical closing difference.
 - **Efectivo contado**: cash physically counted by the operator.
 
 Never label the opening base plus cash sales as “Efectivo de turno” in a summary card.

@@ -628,8 +628,8 @@ export default function Home() {
       tarjeta_real: tarReal,
       transferencia_real: transReal,
       diferencia_efectivo: efReal - efectivoEsperadoParaConteoCierre,
-      diferencia_tarjeta: tarReal - totalTarjetaHoy,
-      diferencia_transferencia: transReal - totalTransferenciaHoy,
+      diferencia_tarjeta: tarReal - tarjetaSistemaNeto,
+      diferencia_transferencia: transReal - transferenciaSistemaNeta,
       user_id: usuario.id,
     };
 
@@ -764,14 +764,21 @@ export default function Home() {
 
   // Lógica de filtrado dinámico para el Historial de Ventas por Arqueo/Turno
   const arqueoSeleccionado = cierres.find((c) => c.id === cierreFiltroSeleccionado);
+  const jornadasRelacionadasAlArqueo = new Set(
+    [
+      arqueoSeleccionado?.jornada_id,
+      ...ventas.filter((v) => v.cierre_id === cierreFiltroSeleccionado).map((v) => v.jornada_id),
+      ...gastos.filter((g) => g.cierre_id === cierreFiltroSeleccionado).map((g) => g.jornada_id),
+    ].filter(Boolean),
+  );
 
   // Muestra las ventas buscando coincidencia directa por cierre_id o por jornada_id asociada
   const ventasFiltradasHistorial = cierreFiltroSeleccionado === 'abierta'
     ? ventas.filter((v) => v.jornada_id === jornadaId && !v.cierre_id)
-    : ventas.filter((v) => v.cierre_id === cierreFiltroSeleccionado || (arqueoSeleccionado?.jornada_id && v.jornada_id === arqueoSeleccionado.jornada_id));
+    : ventas.filter((v) => v.cierre_id === cierreFiltroSeleccionado || (v.jornada_id && jornadasRelacionadasAlArqueo.has(v.jornada_id)));
   const gastosFiltradosHistorial = cierreFiltroSeleccionado === 'abierta'
     ? gastosJornadaActual
-    : gastos.filter((g) => g.cierre_id === cierreFiltroSeleccionado || (arqueoSeleccionado?.jornada_id && g.jornada_id === arqueoSeleccionado.jornada_id));
+    : gastos.filter((g) => g.cierre_id === cierreFiltroSeleccionado || (g.jornada_id && jornadasRelacionadasAlArqueo.has(g.jornada_id)));
 
   if (cargandoAuth) {
     return (
@@ -1204,10 +1211,9 @@ export default function Home() {
               <h2>Control y Cierre de Arqueo (Turno Activo)</h2>
 
               <div className={styles.gridMetricasCaja}>
-                <div className={styles.cardMetrica}><span>Base del Turno</span><h3>${baseEfectivoJornada.toLocaleString()}</h3></div>
-                <div className={styles.cardMetrica}><span>Efectivo de Turno</span><h3 style={{ color: '#16a34a' }}>${totalEfectivoHoy.toLocaleString()}</h3></div>
-                <div className={styles.cardMetrica}><span>Tarjetas Turno</span><h3 style={{ color: '#9333ea' }}>${totalTarjetaHoy.toLocaleString()}</h3></div>
-                <div className={styles.cardMetrica}><span>Transferencias Turno</span><h3 style={{ color: '#ea580c' }}>${totalTransferenciaHoy.toLocaleString()}</h3></div>
+                <div className={styles.cardMetrica}><span>Efectivo</span><h3 style={{ color: '#16a34a' }}>${efectivoEsperadoParaConteoCierre.toLocaleString()}</h3></div>
+                <div className={styles.cardMetrica}><span>Tarjeta</span><h3 style={{ color: '#9333ea' }}>${tarjetaSistemaNeto.toLocaleString()}</h3></div>
+                <div className={styles.cardMetrica}><span>Transferencia</span><h3 style={{ color: '#ea580c' }}>${transferenciaSistemaNeta.toLocaleString()}</h3></div>
               </div>
 
               <div className={styles.formArqueoCaja}>
@@ -1311,9 +1317,9 @@ export default function Home() {
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', fontSize: '13px' }}>
                         <div><span>Base Inicial:</span><br/><strong>${(arqueoSeleccionado.base_inicial || 0).toLocaleString()}</strong></div>
                         <div><span>Total Ventas:</span><br/><strong style={{ color: '#2563eb' }}>${arqueoSeleccionado.total_sistema.toLocaleString()}</strong></div>
-                        <div><span>Efectivo:</span><br/><strong>${arqueoSeleccionado.efectivo_sistema.toLocaleString()}</strong></div>
-                        <div><span>Tarjeta:</span><br/><strong>${arqueoSeleccionado.tarjeta_sistema.toLocaleString()}</strong></div>
-                        <div><span>Transferencia:</span><br/><strong>${arqueoSeleccionado.transferencia_sistema.toLocaleString()}</strong></div>
+                        <div><span>Efectivo:</span><br/><strong>${((arqueoSeleccionado.base_inicial || 0) + arqueoSeleccionado.efectivo_sistema - (arqueoSeleccionado.gastos_efectivo || 0)).toLocaleString()}</strong></div>
+                        <div><span>Tarjeta:</span><br/><strong>${(arqueoSeleccionado.tarjeta_sistema - (arqueoSeleccionado.gastos_tarjeta || 0)).toLocaleString()}</strong></div>
+                        <div><span>Transferencia:</span><br/><strong>${(arqueoSeleccionado.transferencia_sistema - (arqueoSeleccionado.gastos_transferencia || 0)).toLocaleString()}</strong></div>
                         <div><span>Total gastos:</span><br/><strong style={{ color: '#b45309' }}>${(arqueoSeleccionado.total_gastos || 0).toLocaleString()}</strong></div>
                         <div><span>Total neto:</span><br/><strong>${(arqueoSeleccionado.total_neto || 0).toLocaleString()}</strong></div>
                         <div><span>Diferencia Cierre:</span><br/>
