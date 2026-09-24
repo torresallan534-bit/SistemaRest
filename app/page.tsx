@@ -31,7 +31,7 @@ interface Mesa {
   comentarios?: string;
   user_id?: string; 
 }
-interface CierreCaja { id: string; fecha: string; base_inicial: number; total_sistema: number; total_neto?: number; total_gastos?: number; efectivo_sistema: number; tarjeta_sistema: number; transferencia_sistema: number; gastos_efectivo?: number; gastos_tarjeta?: number; gastos_transferencia?: number; efectivo_real: number; tarjeta_real: number; transferencia_real: number; diferencia_efectivo: number; diferencia_tarjeta: number; diferencia_transferencia: number; user_id?: string; }
+interface CierreCaja { id: string; fecha: string; jornada_id?: string; base_inicial: number; total_sistema: number; total_neto?: number; total_gastos?: number; efectivo_sistema: number; tarjeta_sistema: number; transferencia_sistema: number; gastos_efectivo?: number; gastos_tarjeta?: number; gastos_transferencia?: number; efectivo_real: number; tarjeta_real: number; transferencia_real: number; diferencia_efectivo: number; diferencia_tarjeta: number; diferencia_transferencia: number; user_id?: string; }
 
 export default function Home() {
   // Autenticación y Perfil
@@ -613,6 +613,7 @@ export default function Home() {
     const transReal = parseFloat(transferenciaReal) || 0;
 
     const cierre = {
+      jornada_id: jornadaId,
       base_inicial: baseEfectivoJornada,
       total_sistema: totalHoy,
       total_neto: totalHoy - (totalGastosEfectivoHoy + totalGastosTarjetaHoy + totalGastosTransferenciaHoy),
@@ -767,10 +768,10 @@ export default function Home() {
   // Muestra las ventas buscando coincidencia directa por cierre_id o por jornada_id asociada
   const ventasFiltradasHistorial = cierreFiltroSeleccionado === 'abierta'
     ? ventas.filter((v) => v.jornada_id === jornadaId && !v.cierre_id)
-    : ventas.filter((v) => v.cierre_id === cierreFiltroSeleccionado);
+    : ventas.filter((v) => v.cierre_id === cierreFiltroSeleccionado || (arqueoSeleccionado?.jornada_id && v.jornada_id === arqueoSeleccionado.jornada_id));
   const gastosFiltradosHistorial = cierreFiltroSeleccionado === 'abierta'
     ? gastosJornadaActual
-    : gastos.filter((g) => g.cierre_id === cierreFiltroSeleccionado);
+    : gastos.filter((g) => g.cierre_id === cierreFiltroSeleccionado || (arqueoSeleccionado?.jornada_id && g.jornada_id === arqueoSeleccionado.jornada_id));
 
   if (cargandoAuth) {
     return (
