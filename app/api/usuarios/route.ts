@@ -61,3 +61,73 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ username: username.toLowerCase() }, { status: 201 });
 }
+
+export async function DELETE(request: Request) {
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const authorization = request.headers.get('authorization');
+
+  if (!serviceRoleKey) {
+    return NextResponse.json({ error: 'Falta configurar SUPABASE_SERVICE_ROLE_KEY en las variables de entorno de Vercel. Después de agregarla, realiza un nuevo despliegue.' }, { status: 503 });
+  }
+  if (!supabaseUrl || !authorization?.startsWith('Bearer ')) {
+    return NextResponse.json({ error: 'La sesión no está disponible. Cierra sesión, vuelve a ingresar e inténtalo de nuevo.' }, { status: 401 });
+  }
+
+  const accessToken = authorization.slice('Bearer '.length);
+  const authClient = createClient(supabaseUrl, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '');
+  const { data: { user: caller }, error: callerError } = await authClient.auth.getUser(accessToken);
+  if (callerError || !caller) {
+    return NextResponse.json({ error: 'Sesión no autorizada.' }, { status: 401 });
+  }
+
+  const body = await request.json() as { userId?: string; authUserId?: string };
+  const memberId = body.userId || '';
+  const authUserId = body.authUserId || '';
+
+  if (!memberId || !authUserId) {
+    return NextResponse.json({ error: 'Falta la referencia del usuario a eliminar.' }, { status: 400 });
+  }
+
+  const adminClient = createClient(supabaseUrl, serviceRoleKey);
+  const { data: memberToDelete, error: memberLookupError } = await adminClient
+    .from('miembros_negocio')
+    .select('id, owner_user_id, auth_user_id, role')
+    .eq('id', memberId)
+    .maybeSingle();
+
+  if (memberLookupError || !memberToDelete) {
+    return NextResponse.json({ error: 'No se encontró el acceso del usuario.' }, { status: 404 });
+  }
+
+  if (memberToDelete.auth_user_id !== authUserId) {
+    return NextResponse.json({ error: 'La referencia del usuario no coincide con el acceso del negocio.' }, { status: 400 });
+  }
+
+  const { data: ownerMembership } = await adminClient
+    .from('miembros_negocio')
+    .select('owner_user_id')
+    .eq('auth_user_id', caller.id)
+    .eq('role', 'admin')
+    .maybeSingle();
+
+  if (caller.id === authUserId) {
+    return NextResponse.json({ error: 'No puedes eliminar tu propio acceso principal.' }, { status: 400 });
+  }
+
+  if (ownerMembership?.owner_user_id !== memberToDelete.owner_user_id && memberToDelete.owner_user_id !== caller.id) {
+    return NextResponse.json({ error: 'Solo el administrador puede eliminar accesos del negocio.' }, { status: 403 });
+  }
+
+  const { error: deleteMemberError } = await adminClient.from('miembros_negocio').delete().eq('id', memberId);
+  if (deleteMemberError) {
+    return NextResponse.json({ error: deleteMemberError.message }, { status: 400 });
+  }
+
+  const { error: deleteAuthError } = await adminClient.auth.admin.deleteUser(authUserId);
+  if (deleteAuthError) {
+    return NextResponse.json({ error: deleteAuthError.message }, { status: 400 });
+  }
+
+  return NextResponse.json({ ok: true }, { status: 200 });
+}

@@ -165,13 +165,26 @@ export default function Home() {
   const obtenerContextoUsuario = async (authUserId: string) => {
     const { data } = await supabase
       .from('miembros_negocio')
-      .select('owner_user_id, role')
+      .select('owner_user_id, role, activo')
       .eq('auth_user_id', authUserId)
-      .eq('activo', true)
       .maybeSingle();
-    const ownerId = data?.owner_user_id || authUserId;
+
+    const metadataUser = await supabase.auth.getUser();
+    const metadataOwnerId = metadataUser.data.user?.user_metadata?.owner_user_id as string | undefined;
+    const metadataRole = metadataUser.data.user?.user_metadata?.role as 'admin' | 'mesero' | undefined;
+
+    const ownerIdFromMember = data && data.activo !== false ? data.owner_user_id : null;
+    const ownerId = ownerIdFromMember || metadataOwnerId || authUserId;
+
+    if (data) {
+      setRolActual(data.role === 'mesero' ? 'mesero' : 'admin');
+    } else if (metadataRole) {
+      setRolActual(metadataRole === 'mesero' ? 'mesero' : 'admin');
+    } else {
+      setRolActual('admin');
+    }
+
     setPropietarioId(ownerId);
-    setRolActual(data?.role === 'mesero' ? 'mesero' : 'admin');
     return ownerId;
   };
 
@@ -409,9 +422,33 @@ export default function Home() {
       }
       setNuevoMeseroUsuario('');
       setNuevoMeseroClave('');
-      await obtenerMiembrosNegocio();
+      await obtenerMiembrosNegocio(propietarioId || usuario?.id || undefined);
     } finally {
       setCreandoMesero(false);
+    }
+  };
+
+  const eliminarUsuarioNegocio = async (miembro: MiembroNegocio) => {
+    if (!usuario || !propietarioId) return;
+    if (!confirm(`¿Deseas eliminar el acceso de ${miembro.username}? Esta acción también quitará el usuario de acceso.`)) return;
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return alert('La sesión no está disponible.');
+
+    try {
+      const response = await fetch('/api/usuarios', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ userId: miembro.id, authUserId: miembro.auth_user_id }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || 'No fue posible eliminar el usuario.');
+      }
+      await obtenerMiembrosNegocio(propietarioId);
+      alert(`El acceso de ${miembro.username} fue eliminado.`);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'No fue posible eliminar el usuario.');
     }
   };
 
@@ -575,8 +612,10 @@ export default function Home() {
   const totalGastosTarjetaHoy = gastosJornadaActual.filter((g) => g.metodo_pago === 'Tarjeta').reduce((acc, g) => acc + (g.monto || 0), 0);
   const totalGastosTransferenciaHoy = gastosJornadaActual.filter((g) => g.metodo_pago === 'Transferencia').reduce((acc, g) => acc + (g.monto || 0), 0);
 
-  // Solo para la relación del cierre físico: base inicial + efectivo del turno.
-  const efectivoEsperadoParaConteoCierre = baseEfectivoJornada + totalEfectivoHoy - totalGastosEfectivoHoy;
+  // El efectivo del turno representa el valor neto operativo del turno para la vista general.
+  // El mismo valor se usa solo como referencia para el conteo físico en la sección de cierre.
+  const efectivoDeTurno = baseEfectivoJornada + totalEfectivoHoy - totalGastosEfectivoHoy;
+  const efectivoEsperadoParaConteoCierre = efectivoDeTurno;
 
   const tarjetaSistemaNeto = totalTarjetaHoy - totalGastosTarjetaHoy;
   const transferenciaSistemaNeta = totalTransferenciaHoy - totalGastosTransferenciaHoy;
@@ -1187,16 +1226,11 @@ export default function Home() {
                 ) : (
                   <div className={styles.resumenArqueoBox}>
                     <div className={styles.filaResumen}><span>Base Inicial:</span><strong>${baseEfectivoJornada.toLocaleString()}</strong></div>
-                    <div className={styles.filaResumen}><span>Efectivo:</span><strong>${totalEfectivoHoy.toLocaleString()}</strong></div>
-                    <div className={styles.filaResumenDetalle}><span>Gastos en efectivo:</span><strong>−${totalGastosEfectivoHoy.toLocaleString()}</strong></div>
-                    <div className={styles.filaResumenNeto}><span>Efectivo neto:</span><strong>${efectivoEsperadoParaConteoCierre.toLocaleString()}</strong></div>
-                    <div className={styles.filaResumen}><span>Tarjeta:</span><strong>${totalTarjetaHoy.toLocaleString()}</strong></div>
-                    <div className={styles.filaResumenDetalle}><span>Gastos con tarjeta:</span><strong>−${totalGastosTarjetaHoy.toLocaleString()}</strong></div>
-                    <div className={styles.filaResumenNeto}><span>Tarjeta neta:</span><strong>${tarjetaSistemaNeto.toLocaleString()}</strong></div>
-                    <div className={styles.filaResumen}><span>Transferencia:</span><strong>${totalTransferenciaHoy.toLocaleString()}</strong></div>
-                    <div className={styles.filaResumenDetalle}><span>Gastos por transferencia:</span><strong>−${totalGastosTransferenciaHoy.toLocaleString()}</strong></div>
-                    <div className={styles.filaResumenNeto}><span>Transferencia neta:</span><strong>${transferenciaSistemaNeta.toLocaleString()}</strong></div>
-                    <div className={styles.filaResumenTotal}><span>Total neto del turno:</span><strong>${(baseEfectivoJornada + totalHoy - (totalGastosEfectivoHoy + totalGastosTarjetaHoy + totalGastosTransferenciaHoy)).toLocaleString()}</strong></div>
+                    <div className={styles.filaResumen}><span>Ventas del turno:</span><strong>${totalHoy.toLocaleString()}</strong></div>
+                    <div className={styles.filaResumen}><span>Efectivo del turno:</span><strong>${totalEfectivoHoy.toLocaleString()}</strong></div>
+                    <div className={styles.filaResumenNeto}><span>Tarjeta del turno:</span><strong>${totalTarjetaHoy.toLocaleString()}</strong></div>
+                    <div className={styles.filaResumenNeto}><span>Transferencia del turno:</span><strong>${totalTransferenciaHoy.toLocaleString()}</strong></div>
+                    <div className={styles.filaResumenTotal}><span>Total de ventas:</span><strong>${totalHoy.toLocaleString()}</strong></div>
                   </div>
                 )}
               </div>
@@ -1368,15 +1402,14 @@ export default function Home() {
               <h2>Control y Cierre de Arqueo (Turno Activo)</h2>
 
               <div className={styles.gridMetricasCaja}>
-                <div className={styles.cardMetrica}><span>Efectivo</span><h3 style={{ color: '#16a34a' }}>${efectivoEsperadoParaConteoCierre.toLocaleString()}</h3></div>
+                <div className={styles.cardMetrica}><span>Efectivo de turno</span><h3 style={{ color: '#16a34a' }}>${efectivoDeTurno.toLocaleString()}</h3></div>
                 <div className={styles.cardMetrica}><span>Tarjeta</span><h3 style={{ color: '#9333ea' }}>${tarjetaSistemaNeto.toLocaleString()}</h3></div>
                 <div className={styles.cardMetrica}><span>Transferencia</span><h3 style={{ color: '#ea580c' }}>${transferenciaSistemaNeta.toLocaleString()}</h3></div>
               </div>
               <div className={styles.resumenGastosCierre}>
-                <strong>Gastos descontados del turno</strong>
-                <span>Efectivo: −${totalGastosEfectivoHoy.toLocaleString()}</span>
-                <span>Tarjeta: −${totalGastosTarjetaHoy.toLocaleString()}</span>
-                <span>Transferencia: −${totalGastosTransferenciaHoy.toLocaleString()}</span>
+                <strong>Efectivo esperado para conteo</strong>
+                <span>${efectivoEsperadoParaConteoCierre.toLocaleString()}</span>
+                <span>Gastos descontados del turno: −${(totalGastosEfectivoHoy + totalGastosTarjetaHoy + totalGastosTransferenciaHoy).toLocaleString()}</span>
               </div>
 
               <div className={styles.formArqueoCaja}>
@@ -1751,7 +1784,7 @@ export default function Home() {
       {/* MODAL TICKET DE COMANDA PARA COCINA */}
       {usuariosModalAbierto && rolActual === 'admin' && (
         <div className={styles.overlayModal} onClick={() => setUsuariosModalAbierto(false)}>
-          <section className={styles.modalPantallaCompleta} onClick={(e) => e.stopPropagation()} aria-labelledby="usuarios-title">
+          <section className={styles.modalPantallaCompleta} onClick={(e) => e.stopPropagation()} aria-labelledby="usuarios-title" role="dialog" aria-modal="true">
             <header className={styles.encabezadoModalPagina}>
               <div>
                 <span className={styles.etiquetaModal}>Administración del negocio</span>
@@ -1765,14 +1798,15 @@ export default function Home() {
                 <span className={styles.iconoGestion}>+</span>
                 <div>
                   <h3>Crear acceso de mesero</h3>
-                  <p>El mesero podrá ingresar desde el acceso principal y solo verá mesas y pedidos.</p>
+                  <p>El mesero entra desde el login principal y solo tiene acceso a mesas y pedidos.</p>
                 </div>
                 <form onSubmit={crearMesero} className={styles.formUsuarioCompleto}>
                   <label htmlFor="usuario-mesero">Usuario de acceso</label>
                   <input id="usuario-mesero" value={nuevoMeseroUsuario} onChange={(e) => setNuevoMeseroUsuario(e.target.value)} placeholder="Ejemplo: areparamesero1" pattern="[A-Za-z0-9._-]+" required />
-                  <small>Usa letras, números, puntos, guiones o guiones bajos.</small>
+                  <small>Se usará como nombre de usuario directo. Ejemplo: areparamesero1</small>
                   <label htmlFor="clave-mesero">Clave temporal</label>
                   <input id="clave-mesero" type="password" value={nuevoMeseroClave} onChange={(e) => setNuevoMeseroClave(e.target.value)} placeholder="Mínimo 6 caracteres" minLength={6} required />
+                  <small>La clave se define aquí y se usa al iniciar sesión desde la pantalla principal.</small>
                   <button type="submit" className={styles.btnAgregarConBorde} disabled={creandoMesero}>
                     {creandoMesero ? 'Creando acceso...' : 'Crear usuario mesero'}
                   </button>
@@ -1789,7 +1823,12 @@ export default function Home() {
                   <div key={miembro.id} className={styles.filaUsuarioCompleta}>
                     <span className={styles.avatarUsuarioLista}>{miembro.username.charAt(0).toUpperCase()}</span>
                     <div><strong>{miembro.username}</strong><span>Acceso de mesero</span></div>
-                    <span className={miembro.activo ? styles.estadoActivo : styles.estadoInactivo}>{miembro.activo ? 'Activo' : 'Inactivo'}</span>
+                    <div className={styles.accionesUsuarioLista}>
+                      <span className={miembro.activo ? styles.estadoActivo : styles.estadoInactivo}>{miembro.activo ? 'Activo' : 'Inactivo'}</span>
+                      <button type="button" className={styles.btnEliminarConBorde} onClick={() => eliminarUsuarioNegocio(miembro)} aria-label={`Eliminar usuario ${miembro.username}`}>
+                        Eliminar
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
