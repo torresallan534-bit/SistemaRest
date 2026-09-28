@@ -18,8 +18,9 @@ interface Producto { id: string; nombre: string; precio: number; user_id?: strin
 interface Insumo { id: string; nombre: string; unidad: string; stock_actual: number; user_id?: string; }
 interface RecetaItem { id: string; producto_id: string; insumo_id: string; cantidad_requerida: number; user_id?: string; }
 interface LineaFactura { id: number; productoId: string; cantidad: number; }
-interface ProductoVenta { nombre: string; cantidad: number; precioUnitario: number; subtotal: number; }
-interface Venta { id: number; created_at: string; cliente: string; documento: string; metodo_pago: string; total: number; productos: ProductoVenta[]; cierre_id?: string; user_id?: string; jornada_id?: string; }
+interface ProductoVenta { nombre: string; cantidad: number; precioUnitario: number; subtotal: number; producto_id?: string; }
+interface Venta { id: number; created_at: string; cliente: string; documento: string; metodo_pago: string; total: number; productos: ProductoVenta[]; cierre_id?: string; user_id?: string; jornada_id?: string; nombre_vendedor?: string; grupo_division_id?: string; }
+interface DivisionPago { id: number; nombre: string; metodo_pago: 'Efectivo' | 'Tarjeta' | 'Transferencia'; cantidades: Record<number, string>; }
 interface Gasto { id: string; created_at: string; concepto: string; metodo_pago: 'Efectivo' | 'Tarjeta' | 'Transferencia'; monto: number; jornada_id?: string; cierre_id?: string; user_id?: string; }
 interface Mesa { 
   id: string; 
@@ -29,10 +30,23 @@ interface Mesa {
   cliente_nombre?: string;
   cliente_documento?: string;
   comentarios?: string;
+  pedido_creado_por?: string | null;
+  pedido_creado_nombre?: string | null;
   user_id?: string; 
 }
 interface CierreCaja { id: string; fecha: string; jornada_id?: string; base_inicial: number; total_sistema: number; total_neto?: number; total_gastos?: number; efectivo_sistema: number; tarjeta_sistema: number; transferencia_sistema: number; gastos_efectivo?: number; gastos_tarjeta?: number; gastos_transferencia?: number; efectivo_real: number; tarjeta_real: number; transferencia_real: number; diferencia_efectivo: number; diferencia_tarjeta: number; diferencia_transferencia: number; user_id?: string; }
 interface MiembroNegocio { id: string; username: string; role: 'mesero'; auth_user_id: string; activo: boolean; }
+interface InventarioTurno {
+  id: string;
+  user_id: string;
+  jornada_id: string;
+  stock_inicial: Record<string, number>;
+  entradas: Record<string, number>;
+  conteo_final: Record<string, number>;
+  consumo_esperado: Record<string, number>;
+  diferencias: Record<string, number>;
+  created_at: string;
+}
 
 export default function Home() {
   // Autenticación y Perfil
@@ -40,6 +54,7 @@ export default function Home() {
   const [perfil, setPerfil] = useState<Perfil | null>(null);
   const [propietarioId, setPropietarioId] = useState<string | null>(null);
   const [rolActual, setRolActual] = useState<'admin' | 'mesero'>('admin');
+  const [nombreUsuarioNegocio, setNombreUsuarioNegocio] = useState<string | null>(null);
   const [miembrosNegocio, setMiembrosNegocio] = useState<MiembroNegocio[]>([]);
   
   // Formulario Registro
@@ -50,6 +65,7 @@ export default function Home() {
   const [telefonoLocalInput, setTelefonoLocalInput] = useState('');
   const [emailInput, setEmailInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
+  const [errorAcceso, setErrorAcceso] = useState('');
   
   const [esRegistro, setEsRegistro] = useState(false);
   const [cargandoAuth, setCargandoAuth] = useState(true);
@@ -89,6 +105,7 @@ export default function Home() {
     mesa: string;
     hora: string;
     cliente: string;
+    tomadoPor: string;
     comentario: string;
     items: { nombre: string; cantidad: number }[];
   } | null>(null);
@@ -98,6 +115,10 @@ export default function Home() {
   const [metodoPago, setMetodoPago] = useState<'Efectivo' | 'Tarjeta' | 'Transferencia'>('Efectivo');
   const [montoPagaCon, setMontoPagaCon] = useState<string>('');
   const [ventaConfirmadaTicket, setVentaConfirmadaTicket] = useState<Venta | null>(null);
+  const [dividirCuenta, setDividirCuenta] = useState(false);
+  const [divisionesCuenta, setDivisionesCuenta] = useState<DivisionPago[]>([]);
+  const [procesandoPago, setProcesandoPago] = useState(false);
+  const [ticketsDivisionPendientes, setTicketsDivisionPendientes] = useState<Venta[]>([]);
 
   // Cierre
   const [efectivoReal, setEfectivoReal] = useState('');
@@ -122,7 +143,11 @@ export default function Home() {
   const [nuevoInsumoNombre, setNuevoInsumoNombre] = useState('');
   const [nuevoInsumoUnidad, setNuevoInsumoUnidad] = useState('g');
   const [nuevoInsumoStock, setNuevoInsumoStock] = useState('');
-  const [conteosFisicos, setConteosFisicos] = useState<{ [key: string]: string }>({});
+  const [entradasInventario, setEntradasInventario] = useState<Record<string, string>>({});
+  const [conteosFinalesInventario, setConteosFinalesInventario] = useState<Record<string, string>>({});
+  const [inventarioTurnoGuardado, setInventarioTurnoGuardado] = useState<InventarioTurno | null>(null);
+  const [jornadaInventarioCargadaId, setJornadaInventarioCargadaId] = useState<string | null>(null);
+  const [guardandoInventario, setGuardandoInventario] = useState(false);
 
   const [ventaSeleccionada, setVentaSeleccionada] = useState<Venta | null>(null);
   const [cierreFiltroSeleccionado, setCierreFiltroSeleccionado] = useState<string>('abierta');
@@ -133,6 +158,8 @@ export default function Home() {
   const [nuevoMeseroUsuario, setNuevoMeseroUsuario] = useState('');
   const [nuevoMeseroClave, setNuevoMeseroClave] = useState('');
   const [editarPerfilAbierto, setEditarPerfilAbierto] = useState(false);
+  const [claveAdminEdicion, setClaveAdminEdicion] = useState('');
+  const [guardandoPerfil, setGuardandoPerfil] = useState(false);
   const [perfilEditando, setPerfilEditando] = useState({
     nombre_persona: '',
     nombre_local: '',
@@ -163,27 +190,37 @@ export default function Home() {
   };
 
   const obtenerContextoUsuario = async (authUserId: string) => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('miembros_negocio')
-      .select('owner_user_id, role, activo')
+      .select('owner_user_id, role, activo, username')
       .eq('auth_user_id', authUserId)
       .maybeSingle();
-
-    const metadataUser = await supabase.auth.getUser();
-    const metadataOwnerId = metadataUser.data.user?.user_metadata?.owner_user_id as string | undefined;
-    const metadataRole = metadataUser.data.user?.user_metadata?.role as 'admin' | 'mesero' | undefined;
-
-    const ownerIdFromMember = data && data.activo !== false ? data.owner_user_id : null;
-    const ownerId = ownerIdFromMember || metadataOwnerId || authUserId;
+    if (error) throw new Error(`No fue posible verificar el acceso al negocio: ${error.message}`);
 
     if (data) {
-      setRolActual(data.role === 'mesero' ? 'mesero' : 'admin');
-    } else if (metadataRole) {
-      setRolActual(metadataRole === 'mesero' ? 'mesero' : 'admin');
+      if (!data.activo) throw new Error('Este acceso está desactivado. Contacta al administrador del negocio.');
+      if (data.role === 'mesero') {
+        setRolActual('mesero');
+        setNombreUsuarioNegocio(data.username);
+      } else if (data.role === 'admin') {
+        setRolActual('admin');
+        setNombreUsuarioNegocio(null);
+      } else {
+        throw new Error('El rol de este acceso no es válido.');
+      }
     } else {
       setRolActual('admin');
+      setNombreUsuarioNegocio(null);
+      const { data: profile, error: profileError } = await supabase
+        .from('perfiles')
+        .select('id')
+        .eq('id', authUserId)
+        .maybeSingle();
+      if (profileError) throw new Error(`No fue posible verificar el perfil administrador: ${profileError.message}`);
+      if (!profile) throw new Error('No se encontró el perfil de este acceso. Contacta al administrador.');
     }
 
+    const ownerId = data?.owner_user_id || authUserId;
     setPropietarioId(ownerId);
     return ownerId;
   };
@@ -208,15 +245,23 @@ export default function Home() {
   useEffect(() => {
     const inicializarSesion = async () => {
       setCargandoAuth(true);
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (session?.user) {
-        setUsuario(session.user);
-        const ownerId = await obtenerContextoUsuario(session.user.id);
-        await cargarPerfil(ownerId);
-        await cargarTodo(ownerId);
-      } else {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        if (session?.user) {
+          const ownerId = await obtenerContextoUsuario(session.user.id);
+          setUsuario(session.user);
+          await cargarPerfil(ownerId);
+          await cargarTodo(ownerId);
+        } else {
+          setUsuario(null);
+        }
+      } catch (error) {
+        setErrorAcceso(error instanceof Error ? error.message : 'No fue posible validar la sesión.');
+        await supabase.auth.signOut();
         setUsuario(null);
+        setPerfil(null);
+        setPropietarioId(null);
       }
       setCargandoAuth(false);
     };
@@ -225,18 +270,26 @@ export default function Home() {
 
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
-        setUsuario(session.user);
-        const ownerId = await obtenerContextoUsuario(session.user.id);
-        await cargarPerfil(ownerId);
-        await cargarTodo(ownerId);
+        if (event === 'INITIAL_SESSION') return;
+        try {
+          const ownerId = await obtenerContextoUsuario(session.user.id);
+          setUsuario(session.user);
+          await cargarPerfil(ownerId);
+          await cargarTodo(ownerId);
+        } catch (error) {
+          setErrorAcceso(error instanceof Error ? error.message : 'No fue posible validar el acceso al negocio.');
+          await supabase.auth.signOut();
+          setUsuario(null);
+          setPerfil(null);
+          setPropietarioId(null);
+        }
       } else {
         setUsuario(null);
         setPerfil(null);
         setPropietarioId(null);
         setRolActual('admin');
+        setNombreUsuarioNegocio(null);
         setMiembrosNegocio([]);
-        setPropietarioId(null);
-        setRolActual('admin');
       }
     });
 
@@ -246,6 +299,38 @@ export default function Home() {
   // La sesión se inicializa una sola vez; las suscripciones posteriores sincronizan los datos.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const idJornada = jornadaId || cierres[0]?.jornada_id || null;
+    if (rolActual !== 'admin' || !propietarioId || !idJornada) return;
+    let cancelled = false;
+    const cargarInventario = async () => {
+      const { data, error } = await supabase
+        .from('inventarios_turno')
+        .select('*')
+        .eq('jornada_id', idJornada)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        alert(`No fue posible cargar el inventario del turno: ${error.message}`);
+        return;
+      }
+      setInventarioTurnoGuardado(data as InventarioTurno | null);
+      if (data) {
+        setEntradasInventario(data.entradas || {});
+        setConteosFinalesInventario(Object.fromEntries(
+          Object.entries(data.conteo_final || {}).map(([id, cantidad]) => [id, String(cantidad)]),
+        ));
+      } else {
+        setInventarioTurnoGuardado(null);
+        setEntradasInventario({});
+        setConteosFinalesInventario({});
+      }
+    };
+    void cargarInventario();
+    return () => { cancelled = true; };
+  // Load the active shift inventory or the latest closed shift inventory.
+  }, [jornadaId, cierres, propietarioId, rolActual]);
 
   // CANAL EN TIEMPO REAL: Sincronización instantánea
   useEffect(() => {
@@ -288,7 +373,9 @@ export default function Home() {
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!emailInput || !passwordInput) return alert('Completa correo y contraseña');
+    const identificadorAcceso = emailInput.trim();
+    setErrorAcceso('');
+    if (!identificadorAcceso || !passwordInput) return setErrorAcceso('Completa el correo o usuario y la contraseña.');
 
     if (esRegistro) {
       if (!nombrePersonaInput || !nombreLocalInput || !documentoLocalInput || !direccionLocalInput || !telefonoLocalInput) {
@@ -331,21 +418,30 @@ export default function Home() {
         alert('Registro exitoso. Tu negocio fue creado con cinco mesas iniciales.');
       }
     } else {
-      const correoAcceso = emailInput.includes('@')
-        ? emailInput.trim()
-        : `${emailInput.trim().toLowerCase()}@usuarios.restopos.app`;
+      const correoAcceso = identificadorAcceso.includes('@')
+        ? identificadorAcceso
+        : `${identificadorAcceso.toLowerCase()}@usuarios.restopos.app`;
       const { data, error } = await supabase.auth.signInWithPassword({
         email: correoAcceso,
         password: passwordInput,
       });
 
       if (error) {
-        alert('Error de acceso: ' + error.message);
-      } else if (data.user) {
-        setUsuario(data.user);
+        setErrorAcceso('No se pudo iniciar sesión. Verifica el usuario y la contraseña.');
+        return;
+      }
+      if (!data.user) {
+        setErrorAcceso('No se recibió un usuario autenticado. Inténtalo de nuevo.');
+        return;
+      }
+      try {
         const ownerId = await obtenerContextoUsuario(data.user.id);
+        setUsuario(data.user);
         await cargarPerfil(ownerId);
         await cargarTodo(ownerId);
+      } catch (contextError) {
+        await supabase.auth.signOut();
+        setErrorAcceso(contextError instanceof Error ? contextError.message : 'No fue posible validar el acceso al negocio.');
       }
     }
   };
@@ -366,25 +462,41 @@ export default function Home() {
       telefono: perfil.telefono,
       direccion: perfil.direccion,
     });
+    setClaveAdminEdicion('');
     setEditarPerfilAbierto(true);
     setMenuUsuarioAbierto(false);
   };
 
   const guardarPerfil = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!usuario) return;
-    const { data, error } = await supabase
-      .from('perfiles')
-      .update(perfilEditando)
-      .eq('id', usuario.id)
-      .select()
-      .single();
-    if (error) {
-      alert('No fue posible actualizar la información: ' + error.message);
-      return;
+    if (!usuario || rolActual !== 'admin' || !usuario.email) return alert('Solo el administrador puede editar la información del negocio.');
+    if (!claveAdminEdicion) return alert('Ingresa la contraseña del administrador para confirmar los cambios.');
+    setGuardandoPerfil(true);
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: usuario.email,
+        password: claveAdminEdicion,
+      });
+      if (authError || authData.user?.id !== usuario.id) {
+        return alert('No se pudo verificar la contraseña del administrador. Revisa la clave e inténtalo de nuevo.');
+      }
+
+      const { data, error } = await supabase
+        .from('perfiles')
+        .update(perfilEditando)
+        .eq('id', usuario.id)
+        .select()
+        .single();
+      if (error) {
+        alert('No fue posible actualizar la información: ' + error.message);
+        return;
+      }
+      setPerfil(data as Perfil);
+      setEditarPerfilAbierto(false);
+      setClaveAdminEdicion('');
+    } finally {
+      setGuardandoPerfil(false);
     }
-    setPerfil(data as Perfil);
-    setEditarPerfilAbierto(false);
   };
 
   const obtenerMiembrosNegocio = async (ownerId = propietarioId) => {
@@ -403,8 +515,9 @@ export default function Home() {
 
   const crearMesero = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nuevoMeseroUsuario.trim() || nuevoMeseroClave.length < 6) {
-      return alert('Define un usuario y una clave de mínimo seis caracteres.');
+    const username = nuevoMeseroUsuario.trim().toLowerCase();
+    if (!/^[a-z0-9._-]{3,40}$/.test(username) || nuevoMeseroClave.length < 6) {
+      return alert('Escribe un usuario de 3 a 40 caracteres sin @ (letras, números, punto, guion o guion bajo) y una clave de mínimo seis caracteres.');
     }
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return alert('La sesión no está disponible.');
@@ -413,7 +526,7 @@ export default function Home() {
       const response = await fetch('/api/usuarios', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({ username: nuevoMeseroUsuario, password: nuevoMeseroClave }),
+        body: JSON.stringify({ username, password: nuevoMeseroClave }),
       });
       const result = await response.json();
       if (!response.ok) {
@@ -423,6 +536,9 @@ export default function Home() {
       setNuevoMeseroUsuario('');
       setNuevoMeseroClave('');
       await obtenerMiembrosNegocio(propietarioId || usuario?.id || undefined);
+      alert(`Acceso creado. Inicia sesión con el usuario "${username}" y la clave definida.`);
+    } catch (error) {
+      alert(error instanceof Error ? `No fue posible conectar con el servicio de usuarios: ${error.message}` : 'No fue posible conectar con el servicio de usuarios.');
     } finally {
       setCreandoMesero(false);
     }
@@ -624,7 +740,11 @@ export default function Home() {
   const difTransferencia = transferenciaReal !== '' ? Number(transferenciaReal) - transferenciaSistemaNeta : null;
 
   const seleccionarMesa = (m: Mesa) => {
-    if (!cajaAbierta) return alert('Debes abrir la caja antes de iniciar el turno.');
+    if (!cajaAbierta) {
+      return alert(rolActual === 'admin'
+        ? 'Debes abrir la caja antes de iniciar el turno.'
+        : 'El administrador debe abrir la caja antes de que puedas atender mesas.');
+    }
     setMesaSeleccionada(m);
     setLineasMesa(m.pedidos || []);
     setClienteNombreMesa(m.cliente_nombre || '');
@@ -654,13 +774,22 @@ export default function Home() {
     if (productosValidos.length === 0) return alert('Selecciona al menos un producto');
 
     const estado = 'ocupada';
-    await supabase.from('mesas').update({ 
+    const tomadoPor = rolActual === 'mesero'
+      ? nombreUsuarioNegocio || usuario.email || 'Mesero'
+      : perfil?.nombre_persona || 'Administrador';
+    const { error } = await supabase.from('mesas').update({
       pedidos: lineasMesa, 
       estado,
       cliente_nombre: clienteNombreMesa,
       cliente_documento: clienteDocMesa,
-      comentarios: comentarioMesa
+      comentarios: comentarioMesa,
+      pedido_creado_por: usuario.id,
+      pedido_creado_nombre: tomadoPor,
     }).eq('id', mesaSeleccionada.id);
+    if (error) {
+      alert(`No fue posible guardar el pedido: ${error.message}`);
+      return;
+    }
 
     const itemsCocina = productosValidos.map((item) => {
       const prod = productos.find((p) => p.id === item.productoId);
@@ -675,6 +804,7 @@ export default function Home() {
       mesa: mesaSeleccionada.nombre,
       hora: new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       cliente: clienteNombreMesa || 'Cliente General',
+      tomadoPor,
       comentario: comentarioMesa,
       items: itemsCocina
     };
@@ -691,69 +821,74 @@ export default function Home() {
 
     setMontoPagaCon('');
     setMetodoPago('Efectivo');
+    setDividirCuenta(false);
+    setDivisionesCuenta([]);
     setMostrarModalCobro(true);
   };
 
-  const finalizarYCobrarVenta = async () => {
-    if (!mesaSeleccionada || !usuario) return;
+  const agregarDivisionCuenta = () => {
+    setDivisionesCuenta((actuales) => [
+      ...actuales,
+      { id: Date.now(), nombre: `Persona ${actuales.length + 1}`, metodo_pago: 'Efectivo', cantidades: {} },
+    ]);
+  };
 
-    const productosDetalle: ProductoVenta[] = lineasMesa
-      .filter((f) => f.productoId !== '')
-      .map((f) => {
-        const prod = productos.find((p) => p.id === f.productoId);
-        return {
-          nombre: prod ? prod.nombre : '',
-          cantidad: f.cantidad,
-          precioUnitario: prod ? prod.precio : 0,
-          subtotal: prod ? prod.precio * f.cantidad : 0,
-        };
+  const actualizarCantidadDivision = (divisionId: number, lineaId: number, cantidad: string) => {
+    setDivisionesCuenta((actuales) => actuales.map((division) => division.id === divisionId
+      ? { ...division, cantidades: { ...division.cantidades, [lineaId]: cantidad } }
+      : division));
+  };
+
+  const prepararPago = async (divisiones: { nombre: string; metodo_pago: DivisionPago['metodo_pago']; cantidades: Record<number, string> }[]) => {
+    if (!mesaSeleccionada || !usuario || !jornadaId || !cajaAbierta) {
+      return alert('El administrador debe abrir un turno antes de cobrar pedidos.');
+    }
+    const lineas = lineasMesa.filter((linea) => linea.productoId !== '');
+    if (!lineas.length) return alert('No hay productos seleccionados en la mesa.');
+    if (divisiones.some((division) => !Object.values(division.cantidades).some((cantidad) => Number(cantidad) > 0))) {
+      return alert('Cada factura debe tener al menos un producto asignado.');
+    }
+
+    for (const linea of lineas) {
+      const cantidadesAsignadas = divisiones.map((division) => Number(division.cantidades[linea.id]) || 0);
+      if (cantidadesAsignadas.some((cantidad) => cantidad < 0 || !Number.isInteger(cantidad))) {
+        return alert('Las cantidades asignadas deben ser números enteros iguales o mayores que cero.');
+      }
+      const asignado = cantidadesAsignadas.reduce((total, cantidad) => total + cantidad, 0);
+      if (asignado !== linea.cantidad) {
+        return alert(`Asigna las ${linea.cantidad} unidades de "${productos.find((producto) => producto.id === linea.productoId)?.nombre || 'un producto'}" una sola vez entre las facturas.`);
+      }
+    }
+
+    setProcesandoPago(true);
+    try {
+      const { data, error } = await supabase.rpc('cobrar_mesa_dividida', {
+        p_mesa_id: mesaSeleccionada.id,
+        p_jornada_id: jornadaId,
+        p_divisiones: divisiones.map((division) => ({
+          nombre: division.nombre,
+          metodo_pago: division.metodo_pago,
+          items: lineas
+            .map((linea) => ({
+              linea_id: linea.id,
+              producto_id: linea.productoId,
+              cantidad: Number(division.cantidades[linea.id]) || 0,
+            }))
+            .filter((item) => item.cantidad > 0),
+        })),
       });
-
-    const totalCalculado = productosDetalle.reduce((acc, item) => acc + item.subtotal, 0);
-
-    if (metodoPago === 'Efectivo') {
-      const pagaConNum = parseFloat(montoPagaCon) || 0;
-      if (pagaConNum < totalCalculado) {
-        return alert(`El monto ingresado ($${pagaConNum.toLocaleString()}) es menor al total a cobrar ($${totalCalculado.toLocaleString()})`);
+      if (error) {
+        alert('No fue posible registrar las facturas: ' + error.message);
+        return;
       }
-    }
 
-    for (const f of lineasMesa.filter((item) => item.productoId !== '')) {
-      const ingredientes = recetas.filter((r) => r.producto_id === f.productoId);
-      for (const ing of ingredientes) {
-        const insumoObj = insumos.find((i) => i.id === ing.insumo_id);
-        if (insumoObj) {
-          const consumoTotal = Number(ing.cantidad_requerida) * f.cantidad;
-          const nuevoStock = Number(insumoObj.stock_actual) - consumoTotal;
-          await supabase.from('insumos').update({ stock_actual: nuevoStock }).eq('id', insumoObj.id);
-        }
+      const ventasGuardadas = (data || []) as Venta[];
+      if (ventasGuardadas.length !== divisiones.length) {
+        alert('La respuesta del sistema no coincide con las facturas solicitadas. Verifica el historial antes de volver a cobrar.');
+        return;
       }
-    }
-
-    const nuevaVenta = {
-      cliente: clienteNombreMesa || `Mesa: ${mesaSeleccionada.nombre}`,
-      documento: clienteDocMesa || 'N/A',
-      metodo_pago: metodoPago,
-      productos: productosDetalle,
-      total: totalCalculado,
-      user_id: usuario.id,
-      jornada_id: jornadaId,
-    };
-
-    const { data: ventaGuardada, error } = await supabase.from('ventas').insert([nuevaVenta]).select();
-
-    if (error) {
-      alert('Error al registrar la venta: ' + error.message);
-    } else if (ventaGuardada && ventaGuardada[0]) {
-      await supabase.from('mesas').update({ 
-        pedidos: [], 
-        estado: 'libre',
-        cliente_nombre: '',
-        cliente_documento: '',
-        comentarios: ''
-      }).eq('id', mesaSeleccionada.id);
-
-      setVentaConfirmadaTicket(ventaGuardada[0] as Venta);
+      setVentaConfirmadaTicket(ventasGuardadas[0]);
+      setTicketsDivisionPendientes(ventasGuardadas.slice(1));
       setLineasMesa([]);
       setClienteNombreMesa('');
       setClienteDocMesa('');
@@ -761,7 +896,28 @@ export default function Home() {
       setMesaSeleccionada(null);
       setMostrarModalCobro(false);
       await cargarTodo(propietarioId || usuario.id);
+    } finally {
+      setProcesandoPago(false);
     }
+  };
+
+  const finalizarYCobrarVenta = async () => {
+    if (!usuario || !mesaSeleccionada) return;
+    const total = totalCalculadoMesa;
+    if (!Number.isFinite(total) || total <= 0) return alert('El total del pedido debe ser mayor que cero.');
+    if (metodoPago === 'Efectivo') {
+      const recibido = Number(montoPagaCon);
+      if (!Number.isFinite(recibido) || recibido < total) {
+        return alert(`El monto ingresado debe cubrir el total de $${total.toLocaleString()}.`);
+      }
+    }
+    const cantidades = Object.fromEntries(lineasMesa.map((linea) => [linea.id, String(linea.cantidad)]));
+    await prepararPago([{ nombre: clienteNombreMesa || `Mesa: ${mesaSeleccionada.nombre}`, metodo_pago: metodoPago, cantidades }]);
+  };
+
+  const finalizarPagoDividido = async () => {
+    if (divisionesCuenta.length < 2) return alert('Agrega al menos dos personas para dividir la cuenta.');
+    await prepararPago(divisionesCuenta);
   };
 
   // CIERRE DE ARQUEO / TURNO DEFINITIVO
@@ -878,10 +1034,15 @@ export default function Home() {
 
   const guardarInsumo = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!usuario) return;
-    await supabase.from('insumos').insert([{ nombre: nuevoInsumoNombre, unidad: nuevoInsumoUnidad, stock_actual: parseFloat(nuevoInsumoStock), user_id: usuario.id }]);
+    if (!usuario || !propietarioId) return;
+    if (inventarioTurnoCargando) return alert('Espera a que se verifique el inventario del turno.');
+    if (inventarioTurnoActual) return alert('El inventario de este turno ya se guardó. Podrás agregar insumos cuando abras el siguiente turno.');
+    const stock = Number(nuevoInsumoStock);
+    if (!nuevoInsumoNombre.trim() || !Number.isFinite(stock) || stock < 0) return alert('Verifica el nombre y el stock inicial del insumo.');
+    const { error } = await supabase.from('insumos').insert([{ nombre: nuevoInsumoNombre.trim(), unidad: nuevoInsumoUnidad, stock_actual: stock, user_id: propietarioId }]);
+    if (error) return alert(`No fue posible registrar el insumo: ${error.message}`);
     setNuevoInsumoNombre(''); setNuevoInsumoStock('');
-    obtenerInsumos(propietarioId || usuario.id);
+    await obtenerInsumos(propietarioId);
   };
 
   const guardarProducto = async (e: React.FormEvent) => {
@@ -898,20 +1059,122 @@ export default function Home() {
     obtenerProductos(propietarioId || usuario.id);
   };
 
-  const actualizarStockFisico = async (insumoId: string) => {
-    const valor = conteosFisicos[insumoId];
-    if (!valor || !usuario) return;
-    await supabase.from('insumos').update({ stock_actual: parseFloat(valor) }).eq('id', insumoId);
-    setConteosFisicos((prev) => ({ ...prev, [insumoId]: '' }));
-    obtenerInsumos(propietarioId || usuario.id);
+  const guardarInventarioTurno = async () => {
+    const idJornada = jornadaId || cierres[0]?.jornada_id || null;
+    if (!usuario || !propietarioId || !idJornada || rolActual !== 'admin') {
+      return alert('No hay un turno disponible para guardar este inventario.');
+    }
+    if (inventarioTurnoCargando) return alert('Espera a que se verifique el inventario del turno.');
+    if (inventarioTurnoActual) return alert('El inventario de este turno ya está guardado y no se puede modificar.');
+
+    const entradas: Record<string, number> = {};
+    const conteos: Record<string, number> = {};
+    for (const insumo of insumos) {
+      const entrada = entradasInventario[insumo.id] === undefined || entradasInventario[insumo.id] === ''
+        ? 0
+        : Number(entradasInventario[insumo.id]);
+      if (conteosFinalesInventario[insumo.id] === undefined || conteosFinalesInventario[insumo.id] === '') {
+        return alert(`Ingresa el conteo final de ${insumo.nombre}. Usa 0 si no queda stock.`);
+      }
+      const final = Number(conteosFinalesInventario[insumo.id]);
+      if (!Number.isFinite(entrada) || entrada < 0 || !Number.isFinite(final) || final < 0) {
+        return alert(`Ingresa cantidades válidas e iguales o mayores que cero para ${insumo.nombre}.`);
+      }
+      entradas[insumo.id] = entrada;
+      conteos[insumo.id] = final;
+    }
+
+    setGuardandoInventario(true);
+    try {
+      const { data, error } = await supabase.rpc('guardar_inventario_turno', {
+        p_jornada_id: idJornada,
+        p_entradas: entradas,
+        p_conteos: conteos,
+      });
+      if (error) {
+        alert(`No fue posible guardar el inventario: ${error.message}`);
+        return;
+      }
+      const guardado = data as InventarioTurno;
+      setInventarioTurnoGuardado(guardado);
+      setJornadaInventarioCargadaId(idJornada);
+      setInsumos((actuales) => actuales.map((insumo) => ({
+        ...insumo,
+        stock_actual: guardado.conteo_final[insumo.id] ?? insumo.stock_actual,
+      })));
+      alert('Inventario del turno guardado. Quedó bloqueado para conservar el historial.');
+    } finally {
+      setGuardandoInventario(false);
+    }
   };
 
   const formatearFecha = (fechaISO: string) => new Date(fechaISO).toLocaleDateString('es-CO', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const avanzarTicketDivision = () => {
+    if (ticketsDivisionPendientes.length > 0) {
+      setVentaConfirmadaTicket(ticketsDivisionPendientes[0]);
+      setTicketsDivisionPendientes((pendientes) => pendientes.slice(1));
+      return;
+    }
+    setVentaConfirmadaTicket(null);
+    setVentaSeleccionada(null);
+  };
 
   const totalCalculadoMesa = lineasMesa.reduce((acc, f) => {
     const p = productos.find((prod) => prod.id === f.productoId);
     return acc + (p ? p.precio : 0) * f.cantidad;
   }, 0);
+  const jornadaInventarioId = jornadaId || cierres[0]?.jornada_id || null;
+  const inventarioTurnoCargando = Boolean(jornadaInventarioId && jornadaInventarioId !== jornadaInventarioCargadaId);
+  const inventarioTurnoActual = inventarioTurnoGuardado?.jornada_id === jornadaInventarioId ? inventarioTurnoGuardado : null;
+  useEffect(() => {
+    let cancelado = false;
+    if (!jornadaInventarioId || rolActual !== 'admin') {
+      return;
+    }
+
+    const cargarInventarioGuardado = async () => {
+      const { data, error } = await supabase
+        .from('inventarios_turno')
+        .select('*')
+        .eq('jornada_id', jornadaInventarioId)
+        .maybeSingle();
+      if (cancelado) return;
+      if (error) {
+        alert(`No fue posible consultar el inventario del turno: ${error.message}`);
+      } else if (data) {
+        const guardado = data as InventarioTurno;
+        setInventarioTurnoGuardado(guardado);
+        setEntradasInventario(Object.fromEntries(
+          Object.entries(guardado.entradas).map(([id, cantidad]) => [id, String(cantidad)]),
+        ));
+        setConteosFinalesInventario(Object.fromEntries(
+          Object.entries(guardado.conteo_final).map(([id, cantidad]) => [id, String(cantidad)]),
+        ));
+      } else {
+        setInventarioTurnoGuardado(null);
+        setEntradasInventario({});
+        setConteosFinalesInventario({});
+      }
+      setJornadaInventarioCargadaId(jornadaInventarioId);
+    };
+    void cargarInventarioGuardado();
+
+    return () => {
+      cancelado = true;
+    };
+  }, [jornadaInventarioId, rolActual]);
+
+  const consumoTeoricoInventario = (insumoId: string) => ventas
+    .filter((venta) => venta.jornada_id === jornadaInventarioId)
+    .reduce((consumo, venta) => consumo + (venta.productos || []).reduce((total, item) => {
+      const producto = item.producto_id
+        ? productos.find((candidate) => candidate.id === item.producto_id)
+        : productos.find((candidate) => candidate.nombre === item.nombre);
+      const requerido = recetas
+        .filter((receta) => receta.producto_id === producto?.id && receta.insumo_id === insumoId)
+        .reduce((cantidad, receta) => cantidad + Number(receta.cantidad_requerida), 0);
+      return total + requerido * Number(item.cantidad || 0);
+    }, 0), 0);
 
   const pagaConValor = parseFloat(montoPagaCon) || 0;
   const cambioEfectivo = pagaConValor - totalCalculadoMesa;
@@ -1014,16 +1277,22 @@ export default function Home() {
             )}
 
             <div>
-              <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>Correo Electrónico</label>
+              <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>
+                {esRegistro ? 'Correo Electrónico' : 'Correo electrónico o usuario'}
+              </label>
               <input
-                type="email"
-                placeholder="usuario@negocio.com"
+                type={esRegistro ? 'email' : 'text'}
+                inputMode={esRegistro ? 'email' : 'text'}
+                autoComplete={esRegistro ? 'email' : 'username'}
+                autoCapitalize="none"
+                placeholder={esRegistro ? 'usuario@negocio.com' : 'Correo del administrador o usuario de mesero'}
                 value={emailInput}
                 onChange={(e) => setEmailInput(e.target.value)}
                 style={{ width: '100%', padding: '10px', border: '1.5px solid #64748b', borderRadius: '8px', color: '#0f172a', fontSize: '14px', boxSizing: 'border-box' }}
                 required
               />
             </div>
+            {errorAcceso && <p role="alert" style={{ color: '#b91c1c', margin: 0, fontSize: '13px' }}>{errorAcceso}</p>}
 
             <div>
               <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', display: 'block', marginBottom: '4px' }}>Contraseña</label>
@@ -1084,10 +1353,10 @@ export default function Home() {
               aria-haspopup="menu"
             >
               <span className={styles.avatarUsuario}>
-                {(perfil?.nombre_persona || usuario.email || 'U').charAt(0).toUpperCase()}
+                {(rolActual === 'mesero' ? nombreUsuarioNegocio || 'M' : perfil?.nombre_persona || usuario.email || 'U').charAt(0).toUpperCase()}
               </span>
               <span className={styles.identidadUsuario}>
-                <strong>{perfil?.nombre_persona || 'Usuario'}</strong>
+                <strong>{rolActual === 'mesero' ? nombreUsuarioNegocio || 'Mesero' : perfil?.nombre_persona || 'Usuario'}</strong>
                 <small>{usuario.email}</small>
               </span>
               <span className={styles.chevronUsuario}>{menuUsuarioAbierto ? '⌃' : '⌄'}</span>
@@ -1097,10 +1366,10 @@ export default function Home() {
               <div className={styles.dropdownUsuario} role="menu">
                 <div className={styles.encabezadoDropdown}>
                   <span className={styles.avatarGrande}>
-                    {(perfil?.nombre_persona || usuario.email || 'U').charAt(0).toUpperCase()}
+                    {(rolActual === 'mesero' ? nombreUsuarioNegocio || 'M' : perfil?.nombre_persona || usuario.email || 'U').charAt(0).toUpperCase()}
                   </span>
                   <div>
-                    <strong>{perfil?.nombre_persona || 'Usuario'}</strong>
+                    <strong>{rolActual === 'mesero' ? nombreUsuarioNegocio || 'Mesero' : perfil?.nombre_persona || 'Usuario'}</strong>
                     <span>{usuario.email}</span>
                   </div>
                 </div>
@@ -1200,8 +1469,8 @@ export default function Home() {
 
           {/* MESAS */}
           {subPestanaVentas === 'mesas' && (
-            <div className={styles.layoutTresColumnas}>
-              <div className={styles.widgetArqueoIzquierdo}>
+            <div className={`${styles.layoutTresColumnas} ${rolActual === 'mesero' ? styles.layoutMesero : ''}`}>
+              {rolActual === 'admin' && <div className={styles.widgetArqueoIzquierdo}>
                 <div className={styles.cardArqueoHeader}>
                   <h4>Arqueo de turno</h4>
                   <span className={cajaAbierta ? styles.statusAbierta : styles.statusCerrada}>
@@ -1233,7 +1502,7 @@ export default function Home() {
                     <div className={styles.filaResumenTotal}><span>Total de ventas:</span><strong>${totalHoy.toLocaleString()}</strong></div>
                   </div>
                 )}
-              </div>
+              </div>}
 
               <div className={styles.seccionMesasGrid}>
                 {rolActual === 'admin' && (
@@ -1622,6 +1891,16 @@ export default function Home() {
           {/* INVENTARIO */}
           {subPestanaProduccion === 'inventario' && (
             <div className={styles.paddingBloque}>
+              <div className={styles.formArqueoCaja} style={{ marginBottom: '20px' }}>
+                <h3>Inventario del turno</h3>
+                <p>{jornadaInventarioId
+                  ? `Turno asociado: ${cierres.find((cierre) => cierre.jornada_id === jornadaInventarioId) ? formatearFecha(cierres.find((cierre) => cierre.jornada_id === jornadaInventarioId)!.fecha) : 'turno activo'}`
+                  : 'Abre o cierra un turno de caja para registrar su inventario.'}</p>
+                <p>Registra las entradas recibidas y el conteo físico al final del turno. El sistema compara el final esperado (stock inicial + entradas - consumo según recetas) con el conteo final.</p>
+                {inventarioTurnoCargando && <strong>Verificando si el inventario ya fue guardado...</strong>}
+                {inventarioTurnoActual && <strong>Inventario guardado y bloqueado el {formatearFecha(inventarioTurnoActual.created_at)}.</strong>}
+              </div>
+
               <form onSubmit={guardarInsumo} className={styles.formStandard}>
                 <h3>Registrar materia prima</h3>
                 <div className={styles.grid3Campos}>
@@ -1631,28 +1910,71 @@ export default function Home() {
                   </select>
                   <input type="number" placeholder="Stock inicial" value={nuevoInsumoStock} onChange={(e) => setNuevoInsumoStock(e.target.value)} required />
                 </div>
-                <button type="submit" className={styles.btnAgregarConBorde}>Guardar Insumo</button>
+                <button type="submit" className={styles.btnAgregarConBorde} disabled={Boolean(inventarioTurnoActual) || inventarioTurnoCargando}>Guardar insumo</button>
               </form>
 
               <div className={styles.tablaResponsiveContainer}>
                 <table className={styles.tablaApp}>
                   <thead>
-                    <tr><th>Insumo</th><th>Stock Teórico</th><th>Conteo Físico Real</th><th>Acción</th></tr>
+                    <tr><th>Insumo</th><th>Stock inicial</th><th>Entradas recibidas</th><th>Consumo según recetas</th><th>Final esperado</th><th>Conteo final</th></tr>
                   </thead>
                   <tbody>
                     {insumos.map((i) => (
                       <tr key={i.id}>
                         <td><strong>{i.nombre}</strong></td>
-                        <td>{i.stock_actual} {i.unidad}</td>
+                        <td>{inventarioTurnoActual?.stock_inicial[i.id] ?? i.stock_actual} {i.unidad}</td>
                         <td>
-                          <input type="number" placeholder="Real" className={styles.cantInput} value={conteosFisicos[i.id] || ''} onChange={(e) => setConteosFisicos({ ...conteosFisicos, [i.id]: e.target.value })} />
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            placeholder="0"
+                            className={styles.cantInput}
+                            value={entradasInventario[i.id] ?? ''}
+                            onChange={(e) => setEntradasInventario((actuales) => ({ ...actuales, [i.id]: e.target.value }))}
+                            disabled={Boolean(inventarioTurnoActual) || inventarioTurnoCargando || !jornadaInventarioId}
+                            aria-label={`Entradas de ${i.nombre}`}
+                          />
                         </td>
-                        <td><button onClick={() => actualizarStockFisico(i.id)} className={styles.btnVerConBorde}>Rectificar</button></td>
+                        <td>{inventarioTurnoActual?.consumo_esperado[i.id] ?? consumoTeoricoInventario(i.id)} {i.unidad}</td>
+                        <td>{(
+                          (inventarioTurnoActual?.stock_inicial[i.id] ?? i.stock_actual)
+                          + Number(entradasInventario[i.id] || inventarioTurnoActual?.entradas[i.id] || 0)
+                          - (inventarioTurnoActual?.consumo_esperado[i.id] ?? consumoTeoricoInventario(i.id))
+                        ).toLocaleString()} {i.unidad}</td>
+                        <td>
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            placeholder="Conteo físico"
+                            className={styles.cantInput}
+                            value={conteosFinalesInventario[i.id] ?? ''}
+                            onChange={(e) => setConteosFinalesInventario((actuales) => ({ ...actuales, [i.id]: e.target.value }))}
+                            disabled={Boolean(inventarioTurnoActual) || inventarioTurnoCargando || !jornadaInventarioId}
+                            aria-label={`Conteo final de ${i.nombre}`}
+                          />
+                          {inventarioTurnoActual && (inventarioTurnoActual.diferencias[i.id] || 0) !== 0 && (
+                            <small style={{ display: 'block', color: '#b91c1c' }}>
+                              Diferencia: {inventarioTurnoActual.diferencias[i.id].toLocaleString()} {i.unidad}
+                            </small>
+                          )}
+                          {!inventarioTurnoActual && conteosFinalesInventario[i.id] !== undefined && conteosFinalesInventario[i.id] !== '' && (
+                            (() => {
+                              const esperado = i.stock_actual + Number(entradasInventario[i.id] || 0) - consumoTeoricoInventario(i.id);
+                              const diferencia = Number(conteosFinalesInventario[i.id]) - esperado;
+                              return diferencia === 0 ? null : <small style={{ display: 'block', color: '#b91c1c' }}>Diferencia: {diferencia.toLocaleString()} {i.unidad}</small>;
+                            })()
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+              <button type="button" onClick={guardarInventarioTurno} className={styles.btnCierreAccion} disabled={!jornadaInventarioId || Boolean(inventarioTurnoActual) || inventarioTurnoCargando || guardandoInventario || insumos.length === 0}>
+                {guardandoInventario ? 'Guardando inventario...' : inventarioTurnoActual ? 'Inventario guardado' : 'Guardar inventario del turno'}
+              </button>
             </div>
           )}
 
@@ -1803,7 +2125,7 @@ export default function Home() {
                 <form onSubmit={crearMesero} className={styles.formUsuarioCompleto}>
                   <label htmlFor="usuario-mesero">Usuario de acceso</label>
                   <input id="usuario-mesero" value={nuevoMeseroUsuario} onChange={(e) => setNuevoMeseroUsuario(e.target.value)} placeholder="Ejemplo: areparamesero1" pattern="[A-Za-z0-9._-]+" required />
-                  <small>Se usará como nombre de usuario directo. Ejemplo: areparamesero1</small>
+                  <small>Escribe el usuario sin @. Ejemplo: areparamesero1. Se ingresa así desde el login principal.</small>
                   <label htmlFor="clave-mesero">Clave temporal</label>
                   <input id="clave-mesero" type="password" value={nuevoMeseroClave} onChange={(e) => setNuevoMeseroClave(e.target.value)} placeholder="Mínimo 6 caracteres" minLength={6} required />
                   <small>La clave se define aquí y se usa al iniciar sesión desde la pantalla principal.</small>
@@ -1838,7 +2160,7 @@ export default function Home() {
       )}
 
       {editarPerfilAbierto && (
-        <div className={styles.overlayModal} onClick={() => setEditarPerfilAbierto(false)}>
+        <div className={styles.overlayModal} onClick={() => { setEditarPerfilAbierto(false); setClaveAdminEdicion(''); }}>
           <form className={styles.modalPerfil} onClick={(e) => e.stopPropagation()} onSubmit={guardarPerfil}>
             <div className={styles.encabezadoModalFormulario}><div><span className={styles.etiquetaModal}>Configuración del negocio</span><h2>Editar información</h2><p>Mantén actualizados los datos que identifican tu restaurante.</p></div><button type="button" className={styles.btnCerrarModal} onClick={() => setEditarPerfilAbierto(false)} aria-label="Cerrar edición">×</button></div>
             <div className={styles.formularioPerfil}>
@@ -1847,8 +2169,9 @@ export default function Home() {
               <label htmlFor="perfil-documento">Documento<input id="perfil-documento" value={perfilEditando.documento} onChange={(e) => setPerfilEditando({ ...perfilEditando, documento: e.target.value })} required /></label>
               <label htmlFor="perfil-telefono">Teléfono<input id="perfil-telefono" value={perfilEditando.telefono} onChange={(e) => setPerfilEditando({ ...perfilEditando, telefono: e.target.value })} required /></label>
               <label htmlFor="perfil-direccion" className={styles.campoCompleto}>Dirección<input id="perfil-direccion" value={perfilEditando.direccion} onChange={(e) => setPerfilEditando({ ...perfilEditando, direccion: e.target.value })} required /></label>
+              <label htmlFor="clave-admin-edicion" className={styles.campoCompleto}>Contraseña actual del administrador<input id="clave-admin-edicion" type="password" autoComplete="current-password" value={claveAdminEdicion} onChange={(e) => setClaveAdminEdicion(e.target.value)} required /></label>
             </div>
-            <div className={styles.accionesModal}><button type="button" className={styles.btnCancelarModal} onClick={() => setEditarPerfilAbierto(false)}>Cancelar</button><button type="submit" className={styles.btnAgregarConBorde}>Guardar información</button></div>
+            <div className={styles.accionesModal}><button type="button" className={styles.btnCancelarModal} onClick={() => { setEditarPerfilAbierto(false); setClaveAdminEdicion(''); }}>Cancelar</button><button type="submit" className={styles.btnAgregarConBorde} disabled={guardandoPerfil}>{guardandoPerfil ? 'Verificando...' : 'Guardar información'}</button></div>
           </form>
         </div>
       )}
@@ -1862,6 +2185,7 @@ export default function Home() {
                 <h3 style={{ margin: '4px 0 0', fontSize: '18px' }}>COMANDA #{comandaImprimir.numero}</h3>
                 <p style={{ margin: '2px 0', fontSize: '12px' }}><strong>MESA:</strong> {comandaImprimir.mesa}</p>
                 <p style={{ margin: '2px 0', fontSize: '12px', color: '#475569' }}>Hora Entrada: {comandaImprimir.hora}</p>
+                <p style={{ margin: '2px 0', fontSize: '12px', color: '#475569' }}><strong>Tomó el pedido:</strong> {comandaImprimir.tomadoPor}</p>
               </div>
 
               <div style={{ fontSize: '12px', marginBottom: '8px' }}>
@@ -1949,6 +2273,29 @@ export default function Home() {
             <div className={styles.columnaOpcionesCobro}>
               <h3>Opciones de pago</h3>
 
+              <button
+                type="button"
+                className={styles.btnVerConBorde}
+                onClick={() => {
+                  setDividirCuenta((dividida) => {
+                    if (dividida) {
+                      setDivisionesCuenta([]);
+                      return false;
+                    }
+                    setDivisionesCuenta([
+                      { id: Date.now(), nombre: 'Persona 1', metodo_pago: 'Efectivo', cantidades: {} },
+                      { id: Date.now() + 1, nombre: 'Persona 2', metodo_pago: 'Efectivo', cantidades: {} },
+                    ]);
+                    return true;
+                  });
+                }}
+                style={{ width: '100%', marginBottom: '12px' }}
+              >
+                {dividirCuenta ? 'Volver al pago único' : 'Dividir cuenta por productos'}
+              </button>
+
+              {!dividirCuenta ? (
+                <>
               <div style={{ margin: '12px 0' }}>
                 <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Método de pago:</label>
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -1994,13 +2341,80 @@ export default function Home() {
               )}
 
               <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <button onClick={finalizarYCobrarVenta} className={styles.btnCobrar} style={{ width: '100%', fontSize: '16px' }}>
-                  Finalizar y registrar venta
+                <button onClick={finalizarYCobrarVenta} className={styles.btnCobrar} style={{ width: '100%', fontSize: '16px' }} disabled={procesandoPago}>
+                  {procesandoPago ? 'Registrando venta...' : 'Finalizar y registrar venta'}
                 </button>
-                <button onClick={() => setMostrarModalCobro(false)} className={styles.btnEliminarConBorde} style={{ width: '100%' }}>
+                <button onClick={() => setMostrarModalCobro(false)} className={styles.btnEliminarConBorde} style={{ width: '100%' }} disabled={procesandoPago}>
                   Cancelar
                 </button>
               </div>
+                </>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '65vh', overflowY: 'auto' }}>
+                  <p style={{ margin: 0, fontSize: '13px', color: '#475569' }}>Asigna cada unidad del pedido a una sola persona. Se generará una factura independiente por persona.</p>
+                  {divisionesCuenta.map((division, index) => {
+                    const totalDivision = lineasMesa.reduce((total, linea) => {
+                      const producto = productos.find((item) => item.id === linea.productoId);
+                      return total + (producto?.precio || 0) * (Number(division.cantidades[linea.id]) || 0);
+                    }, 0);
+                    return (
+                      <fieldset key={division.id} style={{ border: '1px solid #cbd5e1', borderRadius: '10px', padding: '12px' }}>
+                        <legend style={{ fontWeight: 700 }}>{division.nombre}</legend>
+                        <label style={{ display: 'block', marginBottom: '8px' }}>
+                          Nombre
+                          <input
+                            value={division.nombre}
+                            onChange={(event) => setDivisionesCuenta((actuales) => actuales.map((item) => item.id === division.id ? { ...item, nombre: event.target.value } : item))}
+                            className={styles.inputChico}
+                            aria-label={`Nombre de ${division.nombre}`}
+                          />
+                        </label>
+                        <label style={{ display: 'block', marginBottom: '8px' }}>
+                          Método de pago
+                          <select
+                            value={division.metodo_pago}
+                            onChange={(event) => setDivisionesCuenta((actuales) => actuales.map((item) => item.id === division.id ? { ...item, metodo_pago: event.target.value as DivisionPago['metodo_pago'] } : item))}
+                            className={styles.selectChico}
+                          >
+                            <option value="Efectivo">Efectivo</option>
+                            <option value="Tarjeta">Tarjeta</option>
+                            <option value="Transferencia">Transferencia</option>
+                          </select>
+                        </label>
+                        {lineasMesa.filter((linea) => linea.productoId !== '').map((linea) => {
+                          const producto = productos.find((item) => item.id === linea.productoId);
+                          return (
+                            <label key={linea.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', margin: '6px 0' }}>
+                              <span>{producto?.nombre || 'Producto'} (disponibles: {linea.cantidad})</span>
+                              <input
+                                type="number"
+                                min="0"
+                                max={linea.cantidad}
+                                step="1"
+                                value={division.cantidades[linea.id] || ''}
+                                onChange={(event) => actualizarCantidadDivision(division.id, linea.id, event.target.value)}
+                                className={styles.cantInput}
+                                aria-label={`Unidades de ${producto?.nombre || 'producto'} para ${division.nombre}`}
+                              />
+                            </label>
+                          );
+                        })}
+                        <strong style={{ display: 'block', textAlign: 'right', marginTop: '8px' }}>Total: ${totalDivision.toLocaleString()}</strong>
+                        {index > 1 && (
+                          <button type="button" className={styles.btnEliminarConBorde} onClick={() => setDivisionesCuenta((actuales) => actuales.filter((item) => item.id !== division.id))}>
+                            Quitar persona
+                          </button>
+                        )}
+                      </fieldset>
+                    );
+                  })}
+                  <strong>Total pedido: ${totalCalculadoMesa.toLocaleString()}</strong>
+                  <button type="button" className={styles.btnVerConBorde} onClick={agregarDivisionCuenta}>Agregar persona</button>
+                  <button type="button" onClick={finalizarPagoDividido} className={styles.btnCobrar} disabled={procesandoPago}>
+                    {procesandoPago ? 'Generando facturas...' : 'Generar facturas por separado'}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -2008,7 +2422,7 @@ export default function Home() {
 
       {/* MODAL TICKET CONFIRMADO PARA IMPRESIÓN */}
       {(ventaConfirmadaTicket || ventaSeleccionada) && (
-        <div className={styles.overlayModal} onClick={() => { setVentaConfirmadaTicket(null); setVentaSeleccionada(null); }}>
+        <div className={styles.overlayModal} onClick={ventaConfirmadaTicket ? avanzarTicketDivision : () => setVentaSeleccionada(null)}>
           <div className={styles.modalContentTicket} onClick={(e) => e.stopPropagation()}>
             <div className={styles.ticketImpresionArea}>
               <div style={{ textAlign: 'center', borderBottom: '2px dashed #0f172a', paddingBottom: '8px', marginBottom: '8px' }}>
@@ -2023,6 +2437,7 @@ export default function Home() {
                 <p style={{ margin: '2px 0' }}><strong>Ticket #:</strong> {(ventaConfirmadaTicket || ventaSeleccionada)!.id}</p>
                 <p style={{ margin: '2px 0' }}><strong>Cliente:</strong> {(ventaConfirmadaTicket || ventaSeleccionada)!.cliente}</p>
                 <p style={{ margin: '2px 0' }}><strong>Método de Pago:</strong> {(ventaConfirmadaTicket || ventaSeleccionada)!.metodo_pago}</p>
+                {(ventaConfirmadaTicket || ventaSeleccionada)!.nombre_vendedor && <p style={{ margin: '2px 0' }}><strong>Atendió:</strong> {(ventaConfirmadaTicket || ventaSeleccionada)!.nombre_vendedor}</p>}
               </div>
 
               <table className={styles.tablaTicketPreview}>
@@ -2048,11 +2463,11 @@ export default function Home() {
             </div>
 
             <div className={styles.modalActions}>
-              <button onClick={() => { window.print(); setVentaConfirmadaTicket(null); setVentaSeleccionada(null); }} className={styles.btnCobrar} style={{ flex: 1 }}>
+              <button onClick={() => { window.print(); if (ventaConfirmadaTicket) avanzarTicketDivision(); else setVentaSeleccionada(null); }} className={styles.btnCobrar} style={{ flex: 1 }}>
                 Imprimir ticket
               </button>
-              <button onClick={() => { setVentaConfirmadaTicket(null); setVentaSeleccionada(null); }} className={styles.btnAgregarConBorde}>
-                Cerrar
+              <button onClick={ventaConfirmadaTicket ? avanzarTicketDivision : () => setVentaSeleccionada(null)} className={styles.btnAgregarConBorde}>
+                {ventaConfirmadaTicket && ticketsDivisionPendientes.length > 0 ? 'Siguiente factura' : 'Cerrar'}
               </button>
             </div>
           </div>
