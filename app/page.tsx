@@ -1125,7 +1125,9 @@ export default function Home() {
     e.preventDefault();
     if (!usuario || !propietarioId || rolActual !== 'admin') return;
     if (inventarioTurnoCargando) return alert('Espera a que se verifique el inventario del turno.');
-    if (entradasTurnoGuardadas || inventarioTurnoActual) return alert('No puedes agregar insumos después de guardar las entradas del turno.');
+    if (entradasTurnoGuardadas?.jornada_id === jornadaId || inventarioTurnoActual) {
+      return alert('No puedes agregar insumos después de guardar las entradas del turno.');
+    }
     const stock = Number(nuevoInsumoStock);
     if (!nuevoInsumoNombre.trim() || !Number.isFinite(stock) || stock < 0) return alert('Verifica el nombre y el stock inicial del insumo.');
     const { error } = await supabase.from('insumos').insert([{ nombre: nuevoInsumoNombre.trim(), unidad: nuevoInsumoUnidad, stock_actual: stock, user_id: propietarioId }]);
@@ -1155,7 +1157,7 @@ export default function Home() {
     }
     if (inventarioTurnoCargando || guardandoInventario) return;
     if (inventarioTurnoActual) return alert('El inventario final ya se guardó y las entradas están bloqueadas.');
-    if (entradasTurnoGuardadas && rolActual !== 'admin') {
+    if (entradasTurnoGuardadas?.jornada_id === idJornada && rolActual !== 'admin') {
       return alert('Solo el administrador puede autorizar cambios en las entradas ya guardadas.');
     }
 
@@ -2109,7 +2111,13 @@ export default function Home() {
                     </select>
                     <input type="number" placeholder="Stock inicial" value={nuevoInsumoStock} onChange={(e) => setNuevoInsumoStock(e.target.value)} required />
                   </div>
-                  <button type="submit" className={styles.btnAgregarConBorde} disabled={Boolean(entradasTurnoGuardadas) || Boolean(inventarioTurnoActual) || inventarioTurnoCargando}>Guardar insumo</button>
+                  <button
+                    type="submit"
+                    className={styles.btnAgregarConBorde}
+                    disabled={entradasTurnoGuardadas?.jornada_id === jornadaId || Boolean(inventarioTurnoActual) || inventarioTurnoCargando}
+                  >
+                    Guardar insumo
+                  </button>
                 </form>
               )}
 
