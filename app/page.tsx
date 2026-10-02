@@ -20,6 +20,7 @@ interface RecetaItem { id: string; producto_id: string; insumo_id: string; canti
 interface LineaFactura { id: number; productoId: string; cantidad: number; }
 interface ProductoVenta { nombre: string; cantidad: number; precioUnitario: number; subtotal: number; producto_id?: string; }
 interface Venta { id: number; created_at: string; cliente: string; documento: string; metodo_pago: string; total: number; productos: ProductoVenta[]; cierre_id?: string; user_id?: string; jornada_id?: string; nombre_vendedor?: string; grupo_division_id?: string; }
+type RolNegocio = 'admin' | 'mesero';
 interface DivisionPago { id: number; nombre: string; metodo_pago: 'Efectivo' | 'Tarjeta' | 'Transferencia'; cantidades: Record<number, string>; }
 interface Gasto { id: string; created_at: string; concepto: string; metodo_pago: 'Efectivo' | 'Tarjeta' | 'Transferencia'; monto: number; jornada_id?: string; cierre_id?: string; user_id?: string; }
 interface Mesa { 
@@ -47,13 +48,30 @@ interface InventarioTurno {
   diferencias: Record<string, number>;
   created_at: string;
 }
+interface EntradasInventarioTurno {
+  id: string;
+  user_id: string;
+  jornada_id: string;
+  stock_inicial: Record<string, number>;
+  entradas: Record<string, number>;
+  created_by: string;
+  updated_by: string;
+  created_at: string;
+  updated_at: string;
+}
+interface DiferenciaInventarioAnterior {
+  insumo_id: string;
+  nombre: string;
+  unidad: string;
+  diferencia: number;
+}
 
 export default function Home() {
   // Autenticación y Perfil
   const [usuario, setUsuario] = useState<User | null>(null);
   const [perfil, setPerfil] = useState<Perfil | null>(null);
   const [propietarioId, setPropietarioId] = useState<string | null>(null);
-  const [rolActual, setRolActual] = useState<'admin' | 'mesero'>('admin');
+  const [rolActual, setRolActual] = useState<RolNegocio>('admin');
   const [nombreUsuarioNegocio, setNombreUsuarioNegocio] = useState<string | null>(null);
   const [miembrosNegocio, setMiembrosNegocio] = useState<MiembroNegocio[]>([]);
   
@@ -117,6 +135,7 @@ export default function Home() {
   const [ventaConfirmadaTicket, setVentaConfirmadaTicket] = useState<Venta | null>(null);
   const [dividirCuenta, setDividirCuenta] = useState(false);
   const [divisionesCuenta, setDivisionesCuenta] = useState<DivisionPago[]>([]);
+  const [divisionAbiertaId, setDivisionAbiertaId] = useState<number | null>(null);
   const [procesandoPago, setProcesandoPago] = useState(false);
   const [ticketsDivisionPendientes, setTicketsDivisionPendientes] = useState<Venta[]>([]);
 
@@ -146,6 +165,12 @@ export default function Home() {
   const [entradasInventario, setEntradasInventario] = useState<Record<string, string>>({});
   const [conteosFinalesInventario, setConteosFinalesInventario] = useState<Record<string, string>>({});
   const [inventarioTurnoGuardado, setInventarioTurnoGuardado] = useState<InventarioTurno | null>(null);
+  const [entradasTurnoGuardadas, setEntradasTurnoGuardadas] = useState<EntradasInventarioTurno | null>(null);
+  const [editandoEntradasInventario, setEditandoEntradasInventario] = useState(false);
+  const [consumoInventarioMesero, setConsumoInventarioMesero] = useState<Record<string, number>>({});
+  const [consumoInventarioJornadaId, setConsumoInventarioJornadaId] = useState<string | null>(null);
+  const [diferenciasInventarioAnterior, setDiferenciasInventarioAnterior] = useState<DiferenciaInventarioAnterior[]>([]);
+  const [diferenciasInventarioJornadaId, setDiferenciasInventarioJornadaId] = useState<string | null>(null);
   const [jornadaInventarioCargadaId, setJornadaInventarioCargadaId] = useState<string | null>(null);
   const [guardandoInventario, setGuardandoInventario] = useState(false);
 
@@ -197,19 +222,18 @@ export default function Home() {
       .maybeSingle();
     if (error) throw new Error(`No fue posible verificar el acceso al negocio: ${error.message}`);
 
+    let role: RolNegocio = 'admin';
     if (data) {
       if (!data.activo) throw new Error('Este acceso está desactivado. Contacta al administrador del negocio.');
       if (data.role === 'mesero') {
-        setRolActual('mesero');
+        role = 'mesero';
         setNombreUsuarioNegocio(data.username);
       } else if (data.role === 'admin') {
-        setRolActual('admin');
         setNombreUsuarioNegocio(null);
       } else {
         throw new Error('El rol de este acceso no es válido.');
       }
     } else {
-      setRolActual('admin');
       setNombreUsuarioNegocio(null);
       const { data: profile, error: profileError } = await supabase
         .from('perfiles')
@@ -221,24 +245,40 @@ export default function Home() {
     }
 
     const ownerId = data?.owner_user_id || authUserId;
+    setRolActual(role);
     setPropietarioId(ownerId);
-    return ownerId;
+    return { ownerId, role };
   };
 
-  const cargarTodo = async (userId?: string) => {
+  const cargarTodo = async (userId?: string, role: RolNegocio = rolActual) => {
     const uId = userId || propietarioId || usuario?.id;
     if (!uId) return;
 
-    await Promise.all([
+    if (role === 'mesero') {
+      setInsumos([]);
+      setRecetas([]);
+      setVentas([]);
+      setGastos([]);
+      setCierres([]);
+    }
+
+    const cargas = [
       obtenerJornadaActiva(uId),
       obtenerProductos(uId),
-      obtenerInsumos(uId),
-      obtenerRecetas(uId),
-      obtenerVentas(uId),
-      obtenerGastos(uId),
       obtenerMesas(uId),
-      obtenerCierres(uId),
-    ]);
+    ];
+    if (role === 'admin') {
+      cargas.push(
+        obtenerInsumos(uId),
+        obtenerRecetas(uId),
+        obtenerVentas(uId),
+        obtenerGastos(uId),
+        obtenerCierres(uId),
+      );
+    } else {
+      cargas.push(obtenerInsumos(uId));
+    }
+    await Promise.all(cargas);
   };
 
   // Inicialización de Sesión Persistente
@@ -249,10 +289,10 @@ export default function Home() {
         const { data: { session }, error } = await supabase.auth.getSession();
         if (error) throw error;
         if (session?.user) {
-          const ownerId = await obtenerContextoUsuario(session.user.id);
+          const { ownerId, role } = await obtenerContextoUsuario(session.user.id);
           setUsuario(session.user);
           await cargarPerfil(ownerId);
-          await cargarTodo(ownerId);
+          await cargarTodo(ownerId, role);
         } else {
           setUsuario(null);
         }
@@ -272,10 +312,10 @@ export default function Home() {
       if (session?.user) {
         if (event === 'INITIAL_SESSION') return;
         try {
-          const ownerId = await obtenerContextoUsuario(session.user.id);
+          const { ownerId, role } = await obtenerContextoUsuario(session.user.id);
           setUsuario(session.user);
           await cargarPerfil(ownerId);
-          await cargarTodo(ownerId);
+          await cargarTodo(ownerId, role);
         } catch (error) {
           setErrorAcceso(error instanceof Error ? error.message : 'No fue posible validar el acceso al negocio.');
           await supabase.auth.signOut();
@@ -336,7 +376,7 @@ export default function Home() {
   useEffect(() => {
     if (!usuario?.id) return;
 
-    const canalSincronizacion = supabase
+    let canalSincronizacion = supabase
       .channel('sincronizacion-restopos')
       .on(
         'postgres_changes',
@@ -345,31 +385,33 @@ export default function Home() {
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'ventas', filter: `user_id=eq.${propietarioId || usuario.id}` },
-        () => {
-          obtenerVentas(propietarioId || usuario.id);
-          obtenerJornadaActiva(usuario.id);
-        }
-      )
-      .on(
-        'postgres_changes',
         { event: '*', schema: 'public', table: 'jornadas', filter: `user_id=eq.${propietarioId || usuario.id}` },
         async () => {
           await obtenerJornadaActiva(usuario.id);
-          await obtenerVentas(propietarioId || usuario.id);
         }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'gastos', filter: `user_id=eq.${propietarioId || usuario.id}` },
-        () => obtenerGastos(propietarioId || usuario.id)
-      )
-      .subscribe();
+      );
+    if (rolActual === 'admin') {
+      canalSincronizacion = canalSincronizacion
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'ventas', filter: `user_id=eq.${propietarioId || usuario.id}` },
+          () => {
+            obtenerVentas(propietarioId || usuario.id);
+            obtenerJornadaActiva(usuario.id);
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'gastos', filter: `user_id=eq.${propietarioId || usuario.id}` },
+          () => obtenerGastos(propietarioId || usuario.id)
+        );
+    }
+    canalSincronizacion.subscribe();
 
     return () => {
       supabase.removeChannel(canalSincronizacion);
     };
-  }, [usuario?.id, propietarioId]);
+  }, [usuario?.id, propietarioId, rolActual]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -435,10 +477,10 @@ export default function Home() {
         return;
       }
       try {
-        const ownerId = await obtenerContextoUsuario(data.user.id);
+        const { ownerId, role } = await obtenerContextoUsuario(data.user.id);
         setUsuario(data.user);
         await cargarPerfil(ownerId);
-        await cargarTodo(ownerId);
+        await cargarTodo(ownerId, role);
       } catch (contextError) {
         await supabase.auth.signOut();
         setErrorAcceso(contextError instanceof Error ? contextError.message : 'No fue posible validar el acceso al negocio.');
@@ -663,7 +705,11 @@ export default function Home() {
   };
 
   async function obtenerInsumos(uId: string) {
-    const { data } = await supabase.from('insumos').select('*').eq('user_id', uId).order('nombre', { ascending: true });
+    const { data, error } = await supabase.from('insumos').select('*').eq('user_id', uId).order('nombre', { ascending: true });
+    if (error) {
+      alert(`No fue posible cargar los insumos: ${error.message}`);
+      return;
+    }
     if (data) setInsumos(data as Insumo[]);
   };
 
@@ -827,17 +873,48 @@ export default function Home() {
   };
 
   const agregarDivisionCuenta = () => {
+    const id = Math.max(Date.now(), ...divisionesCuenta.map((division) => division.id + 1));
     setDivisionesCuenta((actuales) => [
       ...actuales,
-      { id: Date.now(), nombre: `Persona ${actuales.length + 1}`, metodo_pago: 'Efectivo', cantidades: {} },
+      { id, nombre: `Persona ${actuales.length + 1}`, metodo_pago: 'Efectivo', cantidades: {} },
     ]);
+    setDivisionAbiertaId(id);
   };
 
   const actualizarCantidadDivision = (divisionId: number, lineaId: number, cantidad: string) => {
-    setDivisionesCuenta((actuales) => actuales.map((division) => division.id === divisionId
-      ? { ...division, cantidades: { ...division.cantidades, [lineaId]: cantidad } }
-      : division));
+    setDivisionesCuenta((actuales) => {
+      const linea = lineasMesa.find((item) => item.id === lineaId);
+      if (!linea) return actuales;
+      const asignadoPorOtros = actuales
+        .filter((division) => division.id !== divisionId)
+        .reduce((total, division) => total + (Number(division.cantidades[lineaId]) || 0), 0);
+      const maximoDisponible = Math.max(0, linea.cantidad - asignadoPorOtros);
+      const cantidadNumerica = Number(cantidad);
+      const cantidadAjustada = cantidad === '' || !Number.isFinite(cantidadNumerica)
+        ? cantidad
+        : String(Math.min(Math.max(cantidadNumerica, 0), maximoDisponible));
+      return actuales.map((division) => division.id === divisionId
+        ? { ...division, cantidades: { ...division.cantidades, [lineaId]: cantidadAjustada } }
+        : division);
+    });
   };
+
+  const unidadesDisponiblesParaDivision = (divisionId: number, lineaId: number) => {
+    const linea = lineasMesa.find((item) => item.id === lineaId);
+    if (!linea) return 0;
+    const asignadoPorOtros = divisionesCuenta
+      .filter((division) => division.id !== divisionId)
+      .reduce((total, division) => total + (Number(division.cantidades[lineaId]) || 0), 0);
+    return Math.max(0, linea.cantidad - asignadoPorOtros);
+  };
+
+  const unidadesSinAsignar = (linea: LineaFactura) => Math.max(
+    0,
+    linea.cantidad - divisionesCuenta.reduce(
+      (total, division) => total + (Number(division.cantidades[linea.id]) || 0),
+      0,
+    ),
+  );
 
   const prepararPago = async (divisiones: { nombre: string; metodo_pago: DivisionPago['metodo_pago']; cantidades: Record<number, string> }[]) => {
     if (!mesaSeleccionada || !usuario || !jornadaId || !cajaAbierta) {
@@ -896,6 +973,18 @@ export default function Home() {
       setMesaSeleccionada(null);
       setMostrarModalCobro(false);
       await cargarTodo(propietarioId || usuario.id);
+      if (rolActual === 'mesero' && jornadaId) {
+        const { data: consumo, error: consumoError } = await supabase.rpc('obtener_consumo_inventario_turno', {
+          p_jornada_id: jornadaId,
+        });
+        if (consumoError) {
+          alert(`Las facturas se registraron, pero no fue posible actualizar el consumo del inventario: ${consumoError.message}`);
+        } else {
+          setConsumoInventarioMesero((consumo || {}) as Record<string, number>);
+          setConsumoInventarioJornadaId(jornadaId);
+          setConsumoInventarioJornadaId(jornadaId);
+        }
+      }
     } finally {
       setProcesandoPago(false);
     }
@@ -1034,9 +1123,9 @@ export default function Home() {
 
   const guardarInsumo = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!usuario || !propietarioId) return;
+    if (!usuario || !propietarioId || rolActual !== 'admin') return;
     if (inventarioTurnoCargando) return alert('Espera a que se verifique el inventario del turno.');
-    if (inventarioTurnoActual) return alert('El inventario de este turno ya se guardó. Podrás agregar insumos cuando abras el siguiente turno.');
+    if (entradasTurnoGuardadas || inventarioTurnoActual) return alert('No puedes agregar insumos después de guardar las entradas del turno.');
     const stock = Number(nuevoInsumoStock);
     if (!nuevoInsumoNombre.trim() || !Number.isFinite(stock) || stock < 0) return alert('Verifica el nombre y el stock inicial del insumo.');
     const { error } = await supabase.from('insumos').insert([{ nombre: nuevoInsumoNombre.trim(), unidad: nuevoInsumoUnidad, stock_actual: stock, user_id: propietarioId }]);
@@ -1059,28 +1148,70 @@ export default function Home() {
     obtenerProductos(propietarioId || usuario.id);
   };
 
+  const guardarEntradasInventarioTurno = async () => {
+    const idJornada = jornadaId;
+    if (!usuario || !propietarioId || !idJornada || !cajaAbierta) {
+      return alert('Debe haber un turno abierto para guardar las entradas de inventario.');
+    }
+    if (inventarioTurnoCargando || guardandoInventario) return;
+    if (inventarioTurnoActual) return alert('El inventario final ya se guardó y las entradas están bloqueadas.');
+    if (entradasTurnoGuardadas && rolActual !== 'admin') {
+      return alert('Solo el administrador puede autorizar cambios en las entradas ya guardadas.');
+    }
+
+    const entradas: Record<string, number> = {};
+    for (const insumo of insumos) {
+      const valor = entradasInventario[insumo.id] === undefined || entradasInventario[insumo.id] === ''
+        ? 0
+        : Number(entradasInventario[insumo.id]);
+      if (!Number.isFinite(valor) || valor < 0) {
+        return alert(`Ingresa una cantidad válida, igual o mayor que cero, para ${insumo.nombre}.`);
+      }
+      entradas[insumo.id] = valor;
+    }
+
+    setGuardandoInventario(true);
+    try {
+      const { data, error } = await supabase.rpc('guardar_entradas_inventario_turno', {
+        p_jornada_id: idJornada,
+        p_entradas: entradas,
+      });
+      if (error) {
+        alert(`No fue posible guardar las entradas del turno: ${error.message}`);
+        return;
+      }
+      const guardado = data as EntradasInventarioTurno;
+      setEntradasTurnoGuardadas(guardado);
+      setEntradasInventario(Object.fromEntries(
+        Object.entries(guardado.entradas).map(([id, cantidad]) => [id, String(cantidad)]),
+      ));
+      setEditandoEntradasInventario(false);
+      alert('Las entradas del turno quedaron guardadas. Solo el administrador podrá corregirlas antes del inventario final.');
+    } finally {
+      setGuardandoInventario(false);
+    }
+  };
+
   const guardarInventarioTurno = async () => {
     const idJornada = jornadaId || cierres[0]?.jornada_id || null;
-    if (!usuario || !propietarioId || !idJornada || rolActual !== 'admin') {
+    if (!usuario || !propietarioId || !idJornada) {
       return alert('No hay un turno disponible para guardar este inventario.');
     }
     if (inventarioTurnoCargando) return alert('Espera a que se verifique el inventario del turno.');
     if (inventarioTurnoActual) return alert('El inventario de este turno ya está guardado y no se puede modificar.');
+    if (!entradasTurnoGuardadas || entradasTurnoGuardadas.jornada_id !== idJornada) {
+      return alert('Guarda primero las entradas recibidas al inicio del turno.');
+    }
 
-    const entradas: Record<string, number> = {};
     const conteos: Record<string, number> = {};
     for (const insumo of insumos) {
-      const entrada = entradasInventario[insumo.id] === undefined || entradasInventario[insumo.id] === ''
-        ? 0
-        : Number(entradasInventario[insumo.id]);
       if (conteosFinalesInventario[insumo.id] === undefined || conteosFinalesInventario[insumo.id] === '') {
         return alert(`Ingresa el conteo final de ${insumo.nombre}. Usa 0 si no queda stock.`);
       }
       const final = Number(conteosFinalesInventario[insumo.id]);
-      if (!Number.isFinite(entrada) || entrada < 0 || !Number.isFinite(final) || final < 0) {
+      if (!Number.isFinite(final) || final < 0) {
         return alert(`Ingresa cantidades válidas e iguales o mayores que cero para ${insumo.nombre}.`);
       }
-      entradas[insumo.id] = entrada;
       conteos[insumo.id] = final;
     }
 
@@ -1088,7 +1219,7 @@ export default function Home() {
     try {
       const { data, error } = await supabase.rpc('guardar_inventario_turno', {
         p_jornada_id: idJornada,
-        p_entradas: entradas,
+        p_entradas: entradasTurnoGuardadas.entradas,
         p_conteos: conteos,
       });
       if (error) {
@@ -1126,34 +1257,69 @@ export default function Home() {
   const jornadaInventarioId = jornadaId || cierres[0]?.jornada_id || null;
   const inventarioTurnoCargando = Boolean(jornadaInventarioId && jornadaInventarioId !== jornadaInventarioCargadaId);
   const inventarioTurnoActual = inventarioTurnoGuardado?.jornada_id === jornadaInventarioId ? inventarioTurnoGuardado : null;
+  const entradasTurnoActual = entradasTurnoGuardadas?.jornada_id === jornadaInventarioId ? entradasTurnoGuardadas : null;
   useEffect(() => {
     let cancelado = false;
-    if (!jornadaInventarioId || rolActual !== 'admin') {
-      return;
-    }
+    if (!jornadaInventarioId) return;
 
     const cargarInventarioGuardado = async () => {
-      const { data, error } = await supabase
-        .from('inventarios_turno')
-        .select('*')
-        .eq('jornada_id', jornadaInventarioId)
-        .maybeSingle();
+      const [inventarioResult, entradasResult] = await Promise.all([
+        supabase
+          .from('inventarios_turno')
+          .select('*')
+          .eq('jornada_id', jornadaInventarioId)
+          .maybeSingle(),
+        supabase
+          .from('inventario_entradas_turno')
+          .select('*')
+          .eq('jornada_id', jornadaInventarioId)
+          .maybeSingle(),
+      ]);
       if (cancelado) return;
-      if (error) {
-        alert(`No fue posible consultar el inventario del turno: ${error.message}`);
-      } else if (data) {
-        const guardado = data as InventarioTurno;
-        setInventarioTurnoGuardado(guardado);
+      if (inventarioResult.error || entradasResult.error) {
+        alert(`No fue posible consultar el inventario del turno: ${(inventarioResult.error || entradasResult.error)?.message}`);
+      } else {
+        const inventario = inventarioResult.data as InventarioTurno | null;
+        const entradas = entradasResult.data as EntradasInventarioTurno | null;
+        setInventarioTurnoGuardado(inventario);
+        setEntradasTurnoGuardadas(entradas);
         setEntradasInventario(Object.fromEntries(
-          Object.entries(guardado.entradas).map(([id, cantidad]) => [id, String(cantidad)]),
+          Object.entries(entradas?.entradas || {}).map(([id, cantidad]) => [id, String(cantidad)]),
         ));
         setConteosFinalesInventario(Object.fromEntries(
-          Object.entries(guardado.conteo_final).map(([id, cantidad]) => [id, String(cantidad)]),
+          Object.entries(inventario?.conteo_final || {}).map(([id, cantidad]) => [id, String(cantidad)]),
         ));
-      } else {
-        setInventarioTurnoGuardado(null);
-        setEntradasInventario({});
-        setConteosFinalesInventario({});
+        setEditandoEntradasInventario(false);
+        if (jornadaId === jornadaInventarioId) {
+          const { data: diferencias, error: diferenciasError } = await supabase.rpc('obtener_diferencias_inventario_anterior', {
+            p_jornada_id: jornadaInventarioId,
+          });
+          if (cancelado) return;
+          if (diferenciasError) {
+            alert(`No fue posible consultar las diferencias del inventario anterior: ${diferenciasError.message}`);
+          } else {
+            setDiferenciasInventarioAnterior((diferencias || []) as DiferenciaInventarioAnterior[]);
+            setDiferenciasInventarioJornadaId(jornadaInventarioId);
+          }
+        } else {
+          setDiferenciasInventarioAnterior([]);
+          setDiferenciasInventarioJornadaId(null);
+        }
+        if (rolActual === 'mesero' && jornadaId === jornadaInventarioId) {
+          const { data: consumo, error: consumoError } = await supabase.rpc('obtener_consumo_inventario_turno', {
+            p_jornada_id: jornadaInventarioId,
+          });
+          if (cancelado) return;
+          if (consumoError) {
+            alert(`No fue posible consultar el consumo esperado: ${consumoError.message}`);
+          } else {
+            setConsumoInventarioMesero((consumo || {}) as Record<string, number>);
+            setConsumoInventarioJornadaId(jornadaInventarioId);
+          }
+        } else {
+          setConsumoInventarioMesero({});
+          setConsumoInventarioJornadaId(null);
+        }
       }
       setJornadaInventarioCargadaId(jornadaInventarioId);
     };
@@ -1162,9 +1328,15 @@ export default function Home() {
     return () => {
       cancelado = true;
     };
-  }, [jornadaInventarioId, rolActual]);
+  }, [jornadaInventarioId, jornadaId, rolActual]);
 
-  const consumoTeoricoInventario = (insumoId: string) => ventas
+  const consumoTeoricoInventario = (insumoId: string) => {
+    if (rolActual === 'mesero') {
+      return consumoInventarioJornadaId === jornadaInventarioId
+        ? Number(consumoInventarioMesero[insumoId] || 0)
+        : 0;
+    }
+    return ventas
     .filter((venta) => venta.jornada_id === jornadaInventarioId)
     .reduce((consumo, venta) => consumo + (venta.productos || []).reduce((total, item) => {
       const producto = item.producto_id
@@ -1175,6 +1347,7 @@ export default function Home() {
         .reduce((cantidad, receta) => cantidad + Number(receta.cantidad_requerida), 0);
       return total + requerido * Number(item.cantidad || 0);
     }, 0), 0);
+  };
 
   const pagaConValor = parseFloat(montoPagaCon) || 0;
   const cambioEfectivo = pagaConValor - totalCalculadoMesa;
@@ -1339,11 +1512,15 @@ export default function Home() {
           <button className={`${styles.btnModulo} ${modulo === 'ventas' ? styles.activeModulo : ''}`} onClick={() => setModulo('ventas')}>
             Ventas y caja
           </button>
-          {rolActual === 'admin' && (
-            <button className={`${styles.btnModulo} ${modulo === 'produccion' ? styles.activeModulo : ''}`} onClick={() => setModulo('produccion')}>
-              Producción y costos
-            </button>
-          )}
+          <button
+            className={`${styles.btnModulo} ${modulo === 'produccion' ? styles.activeModulo : ''}`}
+            onClick={() => {
+              setModulo('produccion');
+              if (rolActual === 'mesero') setSubPestanaProduccion('inventario');
+            }}
+          >
+            {rolActual === 'admin' ? 'Producción y costos' : 'Inventario'}
+          </button>
           <div className={styles.menuUsuario}>
             <button
               type="button"
@@ -1884,8 +2061,8 @@ export default function Home() {
         <div>
           <div className={styles.subBarra}>
             <button className={subPestanaProduccion === 'inventario' ? styles.subActive : ''} onClick={() => setSubPestanaProduccion('inventario')}>Inventario de insumos</button>
-            <button className={subPestanaProduccion === 'recetas' ? styles.subActive : ''} onClick={() => setSubPestanaProduccion('recetas')}>Recetas y costos</button>
-            <button className={subPestanaProduccion === 'productos' ? styles.subActive : ''} onClick={() => setSubPestanaProduccion('productos')}>Productos y precios</button>
+            {rolActual === 'admin' && <button className={subPestanaProduccion === 'recetas' ? styles.subActive : ''} onClick={() => setSubPestanaProduccion('recetas')}>Recetas y costos</button>}
+            {rolActual === 'admin' && <button className={subPestanaProduccion === 'productos' ? styles.subActive : ''} onClick={() => setSubPestanaProduccion('productos')}>Productos y precios</button>}
           </div>
 
           {/* INVENTARIO */}
@@ -1897,21 +2074,86 @@ export default function Home() {
                   ? `Turno asociado: ${cierres.find((cierre) => cierre.jornada_id === jornadaInventarioId) ? formatearFecha(cierres.find((cierre) => cierre.jornada_id === jornadaInventarioId)!.fecha) : 'turno activo'}`
                   : 'Abre o cierra un turno de caja para registrar su inventario.'}</p>
                 <p>Registra las entradas recibidas y el conteo físico al final del turno. El sistema compara el final esperado (stock inicial + entradas - consumo según recetas) con el conteo final.</p>
-                {inventarioTurnoCargando && <strong>Verificando si el inventario ya fue guardado...</strong>}
+                {inventarioTurnoCargando && <strong>Verificando el inventario del turno...</strong>}
+                {entradasTurnoActual && (
+                  <strong>
+                    Entradas del turno guardadas el {formatearFecha(entradasTurnoActual.updated_at)}.
+                    {rolActual === 'mesero' && !inventarioTurnoActual && ' Solo el administrador puede corregirlas.'}
+                  </strong>
+                )}
                 {inventarioTurnoActual && <strong>Inventario guardado y bloqueado el {formatearFecha(inventarioTurnoActual.created_at)}.</strong>}
               </div>
+              {jornadaId
+                && diferenciasInventarioJornadaId === jornadaId
+                && diferenciasInventarioAnterior.length > 0 && (
+                <aside className={styles.alertaInventarioAnterior} role="status">
+                  <strong>Revisa las diferencias del inventario anterior</strong>
+                  <ul>
+                    {diferenciasInventarioAnterior.map((item) => (
+                      <li key={item.insumo_id}>
+                        {item.diferencia < 0 ? 'Faltante' : 'Sobrante'} de {item.nombre}:{' '}
+                        {Math.abs(item.diferencia).toLocaleString()} {item.unidad}
+                      </li>
+                    ))}
+                  </ul>
+                </aside>
+              )}
 
-              <form onSubmit={guardarInsumo} className={styles.formStandard}>
-                <h3>Registrar materia prima</h3>
-                <div className={styles.grid3Campos}>
-                  <input type="text" placeholder="Nombre insumo" value={nuevoInsumoNombre} onChange={(e) => setNuevoInsumoNombre(e.target.value)} required />
-                  <select value={nuevoInsumoUnidad} onChange={(e) => setNuevoInsumoUnidad(e.target.value)}>
-                    <option value="g">Gramos (g)</option><option value="kg">Kilos (kg)</option><option value="ml">Ml</option><option value="unidades">Unidades</option>
-                  </select>
-                  <input type="number" placeholder="Stock inicial" value={nuevoInsumoStock} onChange={(e) => setNuevoInsumoStock(e.target.value)} required />
+              {rolActual === 'admin' && (
+                <form onSubmit={guardarInsumo} className={styles.formStandard}>
+                  <h3>Registrar materia prima</h3>
+                  <div className={styles.grid3Campos}>
+                    <input type="text" placeholder="Nombre insumo" value={nuevoInsumoNombre} onChange={(e) => setNuevoInsumoNombre(e.target.value)} required />
+                    <select value={nuevoInsumoUnidad} onChange={(e) => setNuevoInsumoUnidad(e.target.value)}>
+                      <option value="g">Gramos (g)</option><option value="kg">Kilos (kg)</option><option value="ml">Ml</option><option value="unidades">Unidades</option>
+                    </select>
+                    <input type="number" placeholder="Stock inicial" value={nuevoInsumoStock} onChange={(e) => setNuevoInsumoStock(e.target.value)} required />
+                  </div>
+                  <button type="submit" className={styles.btnAgregarConBorde} disabled={Boolean(entradasTurnoGuardadas) || Boolean(inventarioTurnoActual) || inventarioTurnoCargando}>Guardar insumo</button>
+                </form>
+              )}
+
+              <section className={styles.entradasInventarioPanel} aria-labelledby="titulo-entradas-inventario">
+                <div>
+                  <h3 id="titulo-entradas-inventario">Entradas al inicio del turno</h3>
+                  <p>Registra una vez los insumos recibidos. Después de guardar, solo el administrador puede corregir las cantidades antes de cerrar el inventario.</p>
                 </div>
-                <button type="submit" className={styles.btnAgregarConBorde} disabled={Boolean(inventarioTurnoActual) || inventarioTurnoCargando}>Guardar insumo</button>
-              </form>
+                {rolActual === 'admin' && jornadaId && entradasTurnoActual && !inventarioTurnoActual && !editandoEntradasInventario && (
+                  <button type="button" className={styles.btnVerConBorde} onClick={() => setEditandoEntradasInventario(true)}>
+                    Autorizar edición de entradas
+                  </button>
+                )}
+                {editandoEntradasInventario && (
+                  <button
+                    type="button"
+                    className={styles.btnEliminarConBorde}
+                    onClick={() => {
+                      setEntradasInventario(Object.fromEntries(
+                        Object.entries(entradasTurnoActual?.entradas || {}).map(([id, cantidad]) => [id, String(cantidad)]),
+                      ));
+                      setEditandoEntradasInventario(false);
+                    }}
+                  >
+                    Cancelar edición
+                  </button>
+                )}
+                {entradasTurnoActual && rolActual === 'mesero' && !inventarioTurnoActual && (
+                  <p role="status">Las entradas están bloqueadas. Solicita al administrador que inicie sesión para corregirlas.</p>
+                )}
+                {!entradasTurnoActual && !jornadaId && (
+                  <p>Abre un turno para registrar las entradas de inventario.</p>
+                )}
+              </section>
+              {(!entradasTurnoActual || editandoEntradasInventario) && (
+                <button
+                  type="button"
+                  onClick={guardarEntradasInventarioTurno}
+                  className={styles.btnGuardarInventario}
+                  disabled={!jornadaId || Boolean(inventarioTurnoActual) || inventarioTurnoCargando || guardandoInventario}
+                >
+                  {guardandoInventario ? 'Guardando entradas...' : entradasTurnoActual ? 'Guardar cambios de entradas' : 'Guardar entradas del turno'}
+                </button>
+              )}
 
               <div className={styles.tablaResponsiveContainer}>
                 <table className={styles.tablaApp}>
@@ -1922,7 +2164,7 @@ export default function Home() {
                     {insumos.map((i) => (
                       <tr key={i.id}>
                         <td><strong>{i.nombre}</strong></td>
-                        <td>{inventarioTurnoActual?.stock_inicial[i.id] ?? i.stock_actual} {i.unidad}</td>
+                        <td>{inventarioTurnoActual?.stock_inicial[i.id] ?? entradasTurnoActual?.stock_inicial[i.id] ?? i.stock_actual} {i.unidad}</td>
                         <td>
                           <input
                             type="number"
@@ -1932,14 +2174,19 @@ export default function Home() {
                             className={styles.cantInput}
                             value={entradasInventario[i.id] ?? ''}
                             onChange={(e) => setEntradasInventario((actuales) => ({ ...actuales, [i.id]: e.target.value }))}
-                            disabled={Boolean(inventarioTurnoActual) || inventarioTurnoCargando || !jornadaInventarioId}
+                            disabled={
+                              Boolean(inventarioTurnoActual)
+                              || inventarioTurnoCargando
+                              || !jornadaId
+                              || Boolean(entradasTurnoActual && (rolActual !== 'admin' || !editandoEntradasInventario))
+                            }
                             aria-label={`Entradas de ${i.nombre}`}
                           />
                         </td>
                         <td>{inventarioTurnoActual?.consumo_esperado[i.id] ?? consumoTeoricoInventario(i.id)} {i.unidad}</td>
                         <td>{(
-                          (inventarioTurnoActual?.stock_inicial[i.id] ?? i.stock_actual)
-                          + Number(entradasInventario[i.id] || inventarioTurnoActual?.entradas[i.id] || 0)
+                          (inventarioTurnoActual?.stock_inicial[i.id] ?? entradasTurnoActual?.stock_inicial[i.id] ?? i.stock_actual)
+                          + Number(entradasTurnoActual?.entradas[i.id] ?? entradasInventario[i.id] ?? 0)
                           - (inventarioTurnoActual?.consumo_esperado[i.id] ?? consumoTeoricoInventario(i.id))
                         ).toLocaleString()} {i.unidad}</td>
                         <td>
@@ -1951,7 +2198,7 @@ export default function Home() {
                             className={styles.cantInput}
                             value={conteosFinalesInventario[i.id] ?? ''}
                             onChange={(e) => setConteosFinalesInventario((actuales) => ({ ...actuales, [i.id]: e.target.value }))}
-                            disabled={Boolean(inventarioTurnoActual) || inventarioTurnoCargando || !jornadaInventarioId}
+                            disabled={Boolean(inventarioTurnoActual) || inventarioTurnoCargando || !jornadaInventarioId || !entradasTurnoActual}
                             aria-label={`Conteo final de ${i.nombre}`}
                           />
                           {inventarioTurnoActual && (inventarioTurnoActual.diferencias[i.id] || 0) !== 0 && (
@@ -1961,7 +2208,9 @@ export default function Home() {
                           )}
                           {!inventarioTurnoActual && conteosFinalesInventario[i.id] !== undefined && conteosFinalesInventario[i.id] !== '' && (
                             (() => {
-                              const esperado = i.stock_actual + Number(entradasInventario[i.id] || 0) - consumoTeoricoInventario(i.id);
+                              const esperado = (entradasTurnoActual?.stock_inicial[i.id] ?? i.stock_actual)
+                                + Number(entradasTurnoActual?.entradas[i.id] ?? 0)
+                                - consumoTeoricoInventario(i.id);
                               const diferencia = Number(conteosFinalesInventario[i.id]) - esperado;
                               return diferencia === 0 ? null : <small style={{ display: 'block', color: '#b91c1c' }}>Diferencia: {diferencia.toLocaleString()} {i.unidad}</small>;
                             })()
@@ -1972,8 +2221,13 @@ export default function Home() {
                   </tbody>
                 </table>
               </div>
-              <button type="button" onClick={guardarInventarioTurno} className={styles.btnCierreAccion} disabled={!jornadaInventarioId || Boolean(inventarioTurnoActual) || inventarioTurnoCargando || guardandoInventario || insumos.length === 0}>
-                {guardandoInventario ? 'Guardando inventario...' : inventarioTurnoActual ? 'Inventario guardado' : 'Guardar inventario del turno'}
+              <button
+                type="button"
+                onClick={guardarInventarioTurno}
+                className={styles.btnGuardarInventario}
+                disabled={!jornadaInventarioId || !entradasTurnoActual || Boolean(inventarioTurnoActual) || inventarioTurnoCargando || guardandoInventario || insumos.length === 0}
+              >
+                {guardandoInventario ? 'Guardando inventario final...' : inventarioTurnoActual ? 'Inventario final guardado' : 'Guardar inventario final'}
               </button>
             </div>
           )}
@@ -2277,17 +2531,19 @@ export default function Home() {
                 type="button"
                 className={styles.btnVerConBorde}
                 onClick={() => {
-                  setDividirCuenta((dividida) => {
-                    if (dividida) {
-                      setDivisionesCuenta([]);
-                      return false;
-                    }
-                    setDivisionesCuenta([
-                      { id: Date.now(), nombre: 'Persona 1', metodo_pago: 'Efectivo', cantidades: {} },
-                      { id: Date.now() + 1, nombre: 'Persona 2', metodo_pago: 'Efectivo', cantidades: {} },
-                    ]);
-                    return true;
-                  });
+                  if (dividirCuenta) {
+                    setDivisionesCuenta([]);
+                    setDivisionAbiertaId(null);
+                    setDividirCuenta(false);
+                    return;
+                  }
+                  const personaUnoId = Date.now();
+                  setDivisionesCuenta([
+                    { id: personaUnoId, nombre: 'Persona 1', metodo_pago: 'Efectivo', cantidades: {} },
+                    { id: personaUnoId + 1, nombre: 'Persona 2', metodo_pago: 'Efectivo', cantidades: {} },
+                  ]);
+                  setDivisionAbiertaId(personaUnoId);
+                  setDividirCuenta(true);
                 }}
                 style={{ width: '100%', marginBottom: '12px' }}
               >
@@ -2352,63 +2608,100 @@ export default function Home() {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '65vh', overflowY: 'auto' }}>
                   <p style={{ margin: 0, fontSize: '13px', color: '#475569' }}>Asigna cada unidad del pedido a una sola persona. Se generará una factura independiente por persona.</p>
+                  <p className={styles.resumenUnidadesPendientes}>
+                    Unidades por asignar:{' '}
+                    <strong>
+                      {lineasMesa
+                        .filter((linea) => linea.productoId !== '')
+                        .reduce((total, linea) => total + unidadesSinAsignar(linea), 0)}
+                    </strong>
+                  </p>
                   {divisionesCuenta.map((division, index) => {
                     const totalDivision = lineasMesa.reduce((total, linea) => {
                       const producto = productos.find((item) => item.id === linea.productoId);
                       return total + (producto?.precio || 0) * (Number(division.cantidades[linea.id]) || 0);
                     }, 0);
+                    const unidadesAsignadas = Object.values(division.cantidades)
+                      .reduce((total, cantidad) => total + (Number(cantidad) || 0), 0);
                     return (
-                      <fieldset key={division.id} style={{ border: '1px solid #cbd5e1', borderRadius: '10px', padding: '12px' }}>
-                        <legend style={{ fontWeight: 700 }}>{division.nombre}</legend>
-                        <label style={{ display: 'block', marginBottom: '8px' }}>
-                          Nombre
-                          <input
-                            value={division.nombre}
-                            onChange={(event) => setDivisionesCuenta((actuales) => actuales.map((item) => item.id === division.id ? { ...item, nombre: event.target.value } : item))}
-                            className={styles.inputChico}
-                            aria-label={`Nombre de ${division.nombre}`}
-                          />
-                        </label>
-                        <label style={{ display: 'block', marginBottom: '8px' }}>
-                          Método de pago
-                          <select
-                            value={division.metodo_pago}
-                            onChange={(event) => setDivisionesCuenta((actuales) => actuales.map((item) => item.id === division.id ? { ...item, metodo_pago: event.target.value as DivisionPago['metodo_pago'] } : item))}
-                            className={styles.selectChico}
-                          >
-                            <option value="Efectivo">Efectivo</option>
-                            <option value="Tarjeta">Tarjeta</option>
-                            <option value="Transferencia">Transferencia</option>
-                          </select>
-                        </label>
-                        {lineasMesa.filter((linea) => linea.productoId !== '').map((linea) => {
-                          const producto = productos.find((item) => item.id === linea.productoId);
-                          return (
-                            <label key={linea.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', margin: '6px 0' }}>
-                              <span>{producto?.nombre || 'Producto'} (disponibles: {linea.cantidad})</span>
-                              <input
-                                type="number"
-                                min="0"
-                                max={linea.cantidad}
-                                step="1"
-                                value={division.cantidades[linea.id] || ''}
-                                onChange={(event) => actualizarCantidadDivision(division.id, linea.id, event.target.value)}
-                                className={styles.cantInput}
-                                aria-label={`Unidades de ${producto?.nombre || 'producto'} para ${division.nombre}`}
-                              />
-                            </label>
-                          );
-                        })}
-                        <strong style={{ display: 'block', textAlign: 'right', marginTop: '8px' }}>Total: ${totalDivision.toLocaleString()}</strong>
-                        {index > 1 && (
-                          <button type="button" className={styles.btnEliminarConBorde} onClick={() => setDivisionesCuenta((actuales) => actuales.filter((item) => item.id !== division.id))}>
-                            Quitar persona
-                          </button>
-                        )}
-                      </fieldset>
+                      <details key={division.id} className={styles.personaPagoDropdown} open={divisionAbiertaId === division.id}>
+                        <summary onClick={(event) => {
+                          event.preventDefault();
+                          setDivisionAbiertaId((actual) => actual === division.id ? null : division.id);
+                        }}>
+                          <span>
+                            <strong>{division.nombre || `Persona ${index + 1}`}</strong>
+                            <small>{unidadesAsignadas} unidades asignadas</small>
+                          </span>
+                          <strong>${totalDivision.toLocaleString()}</strong>
+                        </summary>
+                        <div className={styles.personaPagoContenido}>
+                          <label className={styles.campoPersonaPago}>
+                            Nombre
+                            <input
+                              value={division.nombre}
+                              onChange={(event) => setDivisionesCuenta((actuales) => actuales.map((item) => item.id === division.id ? { ...item, nombre: event.target.value } : item))}
+                              className={styles.inputChico}
+                              aria-label={`Nombre de ${division.nombre}`}
+                            />
+                          </label>
+                          <label className={styles.campoPersonaPago}>
+                            Método de pago
+                            <select
+                              value={division.metodo_pago}
+                              onChange={(event) => setDivisionesCuenta((actuales) => actuales.map((item) => item.id === division.id ? { ...item, metodo_pago: event.target.value as DivisionPago['metodo_pago'] } : item))}
+                              className={styles.selectChico}
+                            >
+                              <option value="Efectivo">Efectivo</option>
+                              <option value="Tarjeta">Tarjeta</option>
+                              <option value="Transferencia">Transferencia</option>
+                            </select>
+                          </label>
+                          <div className={styles.listaProductosPersona}>
+                            {lineasMesa.filter((linea) => linea.productoId !== '').map((linea) => {
+                              const producto = productos.find((item) => item.id === linea.productoId);
+                              const disponible = unidadesDisponiblesParaDivision(division.id, linea.id);
+                              return (
+                                <label key={linea.id} className={styles.filaProductoDivision}>
+                                  <span>
+                                    <strong>{producto?.nombre || 'Producto'}</strong>
+                                    <small>
+                                      Máximo para esta persona: {disponible}
+                                      {' · '}
+                                      {unidadesSinAsignar(linea)} por asignar
+                                    </small>
+                                  </span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max={disponible}
+                                    step="1"
+                                    value={division.cantidades[linea.id] || ''}
+                                    onChange={(event) => actualizarCantidadDivision(division.id, linea.id, event.target.value)}
+                                    className={styles.cantInput}
+                                    aria-label={`Unidades disponibles de ${producto?.nombre || 'producto'} para ${division.nombre}`}
+                                  />
+                                </label>
+                              );
+                            })}
+                          </div>
+                          <div className={styles.piePersonaPago}>
+                            <strong>Total de {division.nombre || `Persona ${index + 1}`}: ${totalDivision.toLocaleString()}</strong>
+                            {divisionesCuenta.length > 2 && (
+                              <button type="button" className={styles.btnEliminarConBorde} onClick={() => {
+                                const restantes = divisionesCuenta.filter((item) => item.id !== division.id);
+                                setDivisionesCuenta(restantes);
+                                if (divisionAbiertaId === division.id) setDivisionAbiertaId(restantes[0]?.id ?? null);
+                              }}>
+                                Quitar persona
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </details>
                     );
                   })}
-                  <strong>Total pedido: ${totalCalculadoMesa.toLocaleString()}</strong>
+                  <strong className={styles.totalCuentaDividida}>Total pedido: ${totalCalculadoMesa.toLocaleString()}</strong>
                   <button type="button" className={styles.btnVerConBorde} onClick={agregarDivisionCuenta}>Agregar persona</button>
                   <button type="button" onClick={finalizarPagoDividido} className={styles.btnCobrar} disabled={procesandoPago}>
                     {procesandoPago ? 'Generando facturas...' : 'Generar facturas por separado'}

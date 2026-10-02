@@ -927,6 +927,29 @@
   box-shadow: 0 10px 25px rgba(15, 23, 42, 0.05);
 }
 
+.entradasInventarioPanel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 18px 0;
+  padding: 16px;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  background: #eff6ff;
+}
+
+.entradasInventarioPanel h3 {
+  margin: 0 0 4px;
+}
+
+.entradasInventarioPanel p {
+  margin: 0;
+  color: #475569;
+  font-size: 13px;
+}
+
 .gridArqueoInputs {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -994,6 +1017,23 @@
   border-color: #64748b;
   cursor: not-allowed;
   box-shadow: none;
+}
+
+.btnGuardarInventario {
+  margin: 12px 0;
+  padding: 12px 18px;
+  border: 1px solid #1d4ed8;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  color: #ffffff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btnGuardarInventario:disabled {
+  border-color: #94a3b8;
+  background: #94a3b8;
+  cursor: not-allowed;
 }
 
 .btnAgregarConBorde:disabled {
@@ -1388,6 +1428,115 @@
 .columnaOpcionesCobro {
   display: flex;
   flex-direction: column;
+}
+
+.resumenUnidadesPendientes {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 14px;
+}
+
+.personaPagoDropdown {
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.personaPagoDropdown[open] {
+  border-color: var(--app-accent);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+
+.personaPagoDropdown summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 14px;
+  background: #f8fafc;
+  cursor: pointer;
+  list-style: none;
+}
+
+.personaPagoDropdown summary span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.personaPagoDropdown summary small,
+.filaProductoDivision small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.personaPagoContenido {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+}
+
+.campoPersonaPago {
+  display: grid;
+  gap: 5px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.listaProductosPersona {
+  display: grid;
+  gap: 8px;
+}
+
+.filaProductoDivision {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 88px;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.filaProductoDivision > span {
+  display: grid;
+  gap: 3px;
+}
+
+.piePersonaPago {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.totalCuentaDividida {
+  display: block;
+  padding: 10px 0;
+  border-top: 1px solid #cbd5e1;
+}
+
+@media (max-width: 500px) {
+  .filaProductoDivision {
+    grid-template-columns: minmax(0, 1fr) 72px;
+    gap: 8px;
+  }
+
+  .piePersonaPago {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 .tablaTicketPreview {
