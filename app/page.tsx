@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabaseClient';
 import styles from './Calculadora.module.css';
@@ -156,6 +156,8 @@ export default function Home() {
   const [conceptoGasto, setConceptoGasto] = useState('');
   const [montoGasto, setMontoGasto] = useState('');
   const [metodoPagoGasto, setMetodoPagoGasto] = useState<Gasto['metodo_pago']>('Efectivo');
+  const [registrandoGasto, setRegistrandoGasto] = useState(false);
+  const envioGastoEnCurso = useRef(false);
 
   // Formularios Producción
   const [prodRecetaSel, setProdRecetaSel] = useState('');
@@ -202,22 +204,15 @@ export default function Home() {
     telefono: '',
     direccion: '',
   });
-  const [colorApp, setColorApp] = useState(() => {
-    if (typeof window === 'undefined') return '#2563eb';
-    return window.localStorage.getItem('restopos-color-app') || '#2563eb';
-  });
-  const [fondoApp, setFondoApp] = useState(() => {
-    if (typeof window === 'undefined') return '#d8e9ff';
-    return window.localStorage.getItem('restopos-fondo-app') || '#d8e9ff';
-  });
+  const [colorApp, setColorApp] = useState('#2563eb');
+  const [fondoApp, setFondoApp] = useState('#d8e9ff');
+  const [personalizacionCargadaPara, setPersonalizacionCargadaPara] = useState<string | null>(null);
 
   useEffect(() => {
-    window.localStorage.setItem('restopos-color-app', colorApp);
-  }, [colorApp]);
-
-  useEffect(() => {
-    window.localStorage.setItem('restopos-fondo-app', fondoApp);
-  }, [fondoApp]);
+    if (!propietarioId || personalizacionCargadaPara !== propietarioId) return;
+    window.localStorage.setItem(`restopos-color-app-${propietarioId}`, colorApp);
+    window.localStorage.setItem(`restopos-fondo-app-${propietarioId}`, fondoApp);
+  }, [colorApp, fondoApp, propietarioId, personalizacionCargadaPara]);
 
   useEffect(() => {
     if (rolActual === 'admin' && propietarioId) {
@@ -229,7 +224,18 @@ export default function Home() {
 
   const cargarPerfil = async (userId: string) => {
     const { data } = await supabase.from('perfiles').select('*').eq('id', userId).maybeSingle();
-    if (data) setPerfil(data as Perfil);
+    if (data) {
+      const colorKey = `restopos-color-app-${userId}`;
+      const fondoKey = `restopos-fondo-app-${userId}`;
+      const colorGuardado = window.localStorage.getItem(colorKey) || window.localStorage.getItem('restopos-color-app') || '#2563eb';
+      const fondoGuardado = window.localStorage.getItem(fondoKey) || window.localStorage.getItem('restopos-fondo-app') || '#d8e9ff';
+      setPerfil(data as Perfil);
+      setColorApp(colorGuardado);
+      setFondoApp(fondoGuardado);
+      setPersonalizacionCargadaPara(userId);
+      window.localStorage.removeItem('restopos-color-app');
+      window.localStorage.removeItem('restopos-fondo-app');
+    }
   };
 
   const obtenerContextoUsuario = async (authUserId: string) => {
@@ -453,6 +459,8 @@ export default function Home() {
     return () => {
       supabase.removeChannel(canalSincronizacion);
     };
+  // Recreate the channel when the authenticated user, business, or role changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usuario?.id, propietarioId, rolActual]);
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -714,7 +722,10 @@ export default function Home() {
       .limit(1);
 
     if (error) {
-      console.error('Error al obtener jornada:', error.message);
+      setCajaAbierta(false);
+      setBaseEfectivoJornada(0);
+      setJornadaId(null);
+      alert(`No fue posible verificar el turno abierto: ${error.message}`);
       return;
     }
 
@@ -760,24 +771,31 @@ export default function Home() {
     if (!usuario?.id || !jornadaId) return alert('Debes tener un turno abierto para registrar un gasto.');
     if (!conceptoGasto.trim()) return alert('Ingresa el concepto del gasto.');
     if (!Number.isFinite(monto) || monto <= 0) return alert('Ingresa un monto de gasto válido.');
+    if (envioGastoEnCurso.current) return;
+    envioGastoEnCurso.current = true;
+    setRegistrandoGasto(true);
+    try {
+      const { error } = await supabase.from('gastos').insert([{
+        concepto: conceptoGasto.trim(),
+        monto,
+        metodo_pago: metodoPagoGasto,
+        jornada_id: jornadaId,
+        user_id: usuario.id,
+      }]);
 
-    const { error } = await supabase.from('gastos').insert([{
-      concepto: conceptoGasto.trim(),
-      monto,
-      metodo_pago: metodoPagoGasto,
-      jornada_id: jornadaId,
-      user_id: usuario.id,
-    }]);
+      if (error) {
+        alert('No fue posible registrar el gasto: ' + error.message);
+        return;
+      }
 
-    if (error) {
-      alert('No fue posible registrar el gasto: ' + error.message);
-      return;
+      setConceptoGasto('');
+      setMontoGasto('');
+      setMetodoPagoGasto('Efectivo');
+      await obtenerGastos(propietarioId || usuario.id);
+    } finally {
+      envioGastoEnCurso.current = false;
+      setRegistrandoGasto(false);
     }
-
-    setConceptoGasto('');
-    setMontoGasto('');
-    setMetodoPagoGasto('Efectivo');
-    await obtenerGastos(propietarioId || usuario.id);
   };
 
   const eliminarGasto = async (id: string) => {
@@ -791,13 +809,19 @@ export default function Home() {
   };
 
   async function obtenerProductos(uId: string) {
-    const { data } = await supabase.from('productos').select('*').eq('user_id', uId).order('nombre', { ascending: true });
+    const { data, error } = await supabase.from('productos').select('*').eq('user_id', uId).order('nombre', { ascending: true });
+    if (error) {
+      setProductos([]);
+      alert(`No fue posible cargar los productos: ${error.message}`);
+      return;
+    }
     if (data) setProductos(data as Producto[]);
   };
 
   async function obtenerInsumos(uId: string) {
     const { data, error } = await supabase.from('insumos').select('*').eq('user_id', uId).order('nombre', { ascending: true });
     if (error) {
+      setInsumos([]);
       alert(`No fue posible cargar los insumos: ${error.message}`);
       return;
     }
@@ -805,12 +829,22 @@ export default function Home() {
   };
 
   async function obtenerRecetas(uId: string) {
-    const { data } = await supabase.from('recetas').select('*').eq('user_id', uId);
+    const { data, error } = await supabase.from('recetas').select('*').eq('user_id', uId);
+    if (error) {
+      setRecetas([]);
+      alert(`No fue posible cargar las recetas: ${error.message}`);
+      return;
+    }
     if (data) setRecetas(data as RecetaItem[]);
   };
 
   async function obtenerVentas(uId: string) {
-    const { data } = await supabase.from('ventas').select('*').eq('user_id', uId).order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('ventas').select('*').eq('user_id', uId).order('created_at', { ascending: false });
+    if (error) {
+      setVentas([]);
+      alert(`No fue posible cargar las ventas: ${error.message}`);
+      return;
+    }
     if (data) setVentas(data as Venta[]);
   };
 
@@ -821,7 +855,8 @@ export default function Home() {
       .eq('user_id', uId)
       .order('created_at', { ascending: false });
     if (error) {
-      console.error('Error al obtener gastos:', error.message);
+      setGastos([]);
+      alert(`No fue posible cargar los gastos: ${error.message}`);
       return;
     }
     if (data) setGastos(data as Gasto[]);
@@ -830,6 +865,7 @@ export default function Home() {
   async function obtenerMesas(uId: string, role: RolNegocio = rolActual) {
     const { data, error } = await supabase.from('mesas').select('*').eq('user_id', uId).order('nombre', { ascending: true });
     if (error) {
+      setMesas([]);
       alert(`No fue posible cargar las mesas: ${error.message}`);
       return;
     }
@@ -860,7 +896,12 @@ export default function Home() {
   };
 
   async function obtenerCierres(uId: string) {
-    const { data } = await supabase.from('cierres_caja').select('*').eq('user_id', uId).order('fecha', { ascending: false });
+    const { data, error } = await supabase.from('cierres_caja').select('*').eq('user_id', uId).order('fecha', { ascending: false });
+    if (error) {
+      setCierres([]);
+      alert(`No fue posible cargar los cierres de caja: ${error.message}`);
+      return;
+    }
     if (data) setCierres(data as CierreCaja[]);
   };
 
@@ -1189,49 +1230,62 @@ export default function Home() {
 
   const eliminarVenta = async (id: number) => {
     if (!confirm(`¿Eliminar la venta #${id}?`)) return;
-    await supabase.from('ventas').delete().eq('id', id);
-    if (usuario) obtenerVentas(propietarioId || usuario.id);
-  };
-
-  const eliminarCierre = async (cierreId: string) => {
-    if (!confirm('¿Eliminar cierre de caja?')) return;
-    await supabase.from('ventas').update({ cierre_id: null }).eq('cierre_id', cierreId);
-    await supabase.from('cierres_caja').delete().eq('id', cierreId);
-    if (usuario) cargarTodo(propietarioId || usuario.id);
+    const { error } = await supabase.from('ventas').delete().eq('id', id);
+    if (error) {
+      alert('No fue posible eliminar la venta: ' + error.message);
+      return;
+    }
+    if (usuario) await obtenerVentas(propietarioId || usuario.id);
   };
 
   const guardarRecetaMultiple = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!prodRecetaSel || !usuario) return alert('Selecciona un producto');
 
-    const inserciones = lineasReceta
-      .filter((l) => l.insumo_id && l.cantidad_requerida)
-      .map((l) => ({
+    const lineasCompletas = lineasReceta.filter((linea) => linea.insumo_id && linea.cantidad_requerida);
+    if (lineasCompletas.length === 0) return alert('Agrega al menos un insumo');
+    const inserciones = lineasCompletas.map((linea) => ({
         producto_id: prodRecetaSel,
-        insumo_id: l.insumo_id,
-        cantidad_requerida: parseFloat(l.cantidad_requerida),
+        insumo_id: linea.insumo_id,
+        cantidad_requerida: Number(linea.cantidad_requerida),
         user_id: usuario.id,
       }));
 
-    if (inserciones.length === 0) return alert('Agrega al menos un insumo');
+    if (inserciones.some((linea) => !Number.isFinite(linea.cantidad_requerida) || linea.cantidad_requerida <= 0)) {
+      return alert('Cada cantidad de la receta debe ser un número mayor que cero.');
+    }
 
-    await supabase.from('recetas').insert(inserciones);
+    const { error } = await supabase.from('recetas').insert(inserciones);
+    if (error) {
+      alert(`No fue posible guardar la receta: ${error.message}`);
+      return;
+    }
     setProdRecetaSel('');
     setLineasReceta([{ insumo_id: '', cantidad_requerida: '' }]);
-    obtenerRecetas(propietarioId || usuario.id);
+    await obtenerRecetas(propietarioId || usuario.id);
   };
 
   const editarCantidadReceta = async (id: string) => {
     if (!cantEditandoVal || !usuario) return;
-    await supabase.from('recetas').update({ cantidad_requerida: parseFloat(cantEditandoVal) }).eq('id', id);
+    const cantidad = Number(cantEditandoVal);
+    if (!Number.isFinite(cantidad) || cantidad <= 0) return alert('La cantidad debe ser un número mayor que cero.');
+    const { error } = await supabase.from('recetas').update({ cantidad_requerida: cantidad }).eq('id', id);
+    if (error) {
+      alert(`No fue posible actualizar la receta: ${error.message}`);
+      return;
+    }
     setRecetaEditandoId(null); setCantEditandoVal('');
-    obtenerRecetas(propietarioId || usuario.id);
+    await obtenerRecetas(propietarioId || usuario.id);
   };
 
   const eliminarRecetaItem = async (id: string) => {
     if (!confirm('¿Eliminar ingrediente?')) return;
-    await supabase.from('recetas').delete().eq('id', id);
-    if (usuario) obtenerRecetas(propietarioId || usuario.id);
+    const { error } = await supabase.from('recetas').delete().eq('id', id);
+    if (error) {
+      alert(`No fue posible eliminar el ingrediente de la receta: ${error.message}`);
+      return;
+    }
+    if (usuario) await obtenerRecetas(propietarioId || usuario.id);
   };
 
   const guardarInsumo = async (e: React.FormEvent) => {
@@ -1252,15 +1306,37 @@ export default function Home() {
   const guardarProducto = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!usuario) return;
-    const precioNum = parseFloat(nuevoPrecio);
-    if (productoEditando) {
-      await supabase.from('productos').update({ nombre: nuevoNombre, precio: precioNum }).eq('id', productoEditando.id);
-      setProductoEditando(null);
-    } else {
-      await supabase.from('productos').insert([{ nombre: nuevoNombre, precio: precioNum, user_id: usuario.id }]);
+    const nombre = nuevoNombre.trim();
+    const precioNum = Number(nuevoPrecio);
+    if (!nombre || !Number.isFinite(precioNum) || precioNum < 0) {
+      return alert('Ingresa un nombre y un precio válido igual o mayor que cero.');
     }
+    if (productoEditando) {
+      const { error } = await supabase.from('productos').update({ nombre, precio: precioNum }).eq('id', productoEditando.id);
+      if (error) {
+        alert(`No fue posible actualizar el producto: ${error.message}`);
+        return;
+      }
+    } else {
+      const { error } = await supabase.from('productos').insert([{ nombre, precio: precioNum, user_id: usuario.id }]);
+      if (error) {
+        alert(`No fue posible registrar el producto: ${error.message}`);
+        return;
+      }
+    }
+    setProductoEditando(null);
     setNuevoNombre(''); setNuevoPrecio('');
-    obtenerProductos(propietarioId || usuario.id);
+    await obtenerProductos(propietarioId || usuario.id);
+  };
+
+  const eliminarProducto = async (producto: Producto) => {
+    if (!confirm(`¿Eliminar el producto "${producto.nombre}"?`)) return;
+    const { error } = await supabase.from('productos').delete().eq('id', producto.id);
+    if (error) {
+      alert(`No fue posible eliminar el producto: ${error.message}`);
+      return;
+    }
+    if (usuario) await obtenerProductos(propietarioId || usuario.id);
   };
 
   const guardarEntradasInventarioTurno = async () => {
@@ -1837,7 +1913,7 @@ export default function Home() {
                     <div className={styles.tituloPersonalizacion}>
                       <div>
                         <strong>Color principal</strong>
-                        <span>Botones, selecciones y detalles destacados.</span>
+                        <span>Botones y detalles. Se guarda para este negocio en este navegador.</span>
                       </div>
                       <input
                         type="color"
@@ -1869,7 +1945,7 @@ export default function Home() {
                     <div className={styles.tituloPersonalizacion}>
                       <div>
                         <strong>Fondo de la aplicación</strong>
-                        <span>Elige el color del espacio detrás de las tarjetas.</span>
+                        <span>Elige el fondo de este negocio en este navegador.</span>
                       </div>
                       <input
                         type="color"
@@ -2098,7 +2174,9 @@ export default function Home() {
                     </select>
                   </div>
                 </div>
-                <button type="submit" className={styles.btnAgregarConBorde} disabled={!cajaAbierta}>Registrar gasto</button>
+                <button type="submit" className={styles.btnAgregarConBorde} disabled={!cajaAbierta || registrandoGasto}>
+                  {registrandoGasto ? 'Registrando gasto...' : 'Registrar gasto'}
+                </button>
                 {!cajaAbierta && <p className={styles.mensajeAyuda}>Abre un turno para registrar gastos.</p>}
               </form>
 
@@ -2116,7 +2194,13 @@ export default function Home() {
                           <td>{gasto.concepto}</td>
                           <td>{gasto.metodo_pago}</td>
                           <td><strong>${gasto.monto.toLocaleString()}</strong></td>
-                          <td><button aria-label={`Eliminar gasto ${gasto.concepto}`} onClick={() => eliminarGasto(gasto.id)} className={styles.btnEliminarConBorde}>🗑️</button></td>
+                          <td>
+                            {cierreFiltroSeleccionado !== 'abierta' || gasto.cierre_id ? (
+                              <span>Turno cerrado</span>
+                            ) : (
+                              <button aria-label={`Eliminar gasto ${gasto.concepto}`} onClick={() => eliminarGasto(gasto.id)} className={styles.btnEliminarConBorde}>🗑️</button>
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -2307,7 +2391,11 @@ export default function Home() {
                               <td><strong>${v.total.toLocaleString()}</strong></td>
                               <td>
                                 <button onClick={() => setVentaSeleccionada(v)} className={styles.btnVerConBorde}>Ver ticket</button>
-                                <button aria-label={`Eliminar venta ${v.id}`} onClick={() => eliminarVenta(v.id)} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>🗑️</button>
+                                {cierreFiltroSeleccionado !== 'abierta' || v.cierre_id ? (
+                                  <span style={{ marginLeft: '6px' }}>Turno cerrado</span>
+                                ) : (
+                                  <button aria-label={`Eliminar venta ${v.id}`} onClick={() => eliminarVenta(v.id)} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>🗑️</button>
+                                )}
                               </td>
                             </tr>
                           ))
@@ -2335,7 +2423,6 @@ export default function Home() {
                           </td>
                           <td>
                             <button onClick={() => { setCierreFiltroSeleccionado(c.id); setSubPestanaHistorial('ventas'); }} className={styles.btnVerConBorde}>Ver registros</button>
-                            <button aria-label="Eliminar arqueo" onClick={() => eliminarCierre(c.id)} className={styles.btnEliminarConBorde}>🗑️</button>
                           </td>
                         </tr>
                       ))}
@@ -2648,7 +2735,7 @@ export default function Home() {
                         <td>${p.precio.toLocaleString()}</td>
                         <td>
                           <button onClick={() => { setProductoEditando(p); setNuevoNombre(p.nombre); setNuevoPrecio(p.precio.toString()); }} className={styles.btnVerConBorde}>Editar</button>
-                          <button aria-label={`Eliminar producto ${p.nombre}`} onClick={async () => { await supabase.from('productos').delete().eq('id', p.id); if (usuario) obtenerProductos(usuario.id); }} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>🗑️</button>
+                          <button aria-label={`Eliminar producto ${p.nombre}`} onClick={() => eliminarProducto(p)} className={styles.btnEliminarConBorde} style={{ marginLeft: '6px' }}>🗑️</button>
                         </td>
                       </tr>
                     ))}

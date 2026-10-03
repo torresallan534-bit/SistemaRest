@@ -73,6 +73,21 @@ Expenses are cash outflows. A closing must associate the active shift's expenses
 - Keep destructive actions explicit and textual, for example `Eliminar producto`.
 - Preserve the account menu as the place for profile details, theme customization, and session logout.
 
+## Pilot readiness and failure planning
+
+Use a Murphy-law mindset: plan as though a wrong project could be selected, a request could fail halfway, a staff member could make a mistake, connectivity could drop during a sale or closing, and a backup could fail to restore. Before a production migration, identify the exact project and pending migrations, inspect the SQL, ensure a recovery path, and verify the applied migration history and resulting behavior; do not treat a successful command or local build as proof by itself.
+
+Before an unsupervised restaurant pilot, complete these checks:
+
+1. **Tenant isolation:** use two separate business accounts and verify each cannot read, create, update, or delete the other's records through the app and database access paths.
+2. **Role boundaries:** verify admin and waiter permissions in the database, including inactive staff, direct API/database requests, and attempts to alter ownership fields.
+3. **Financial integrity:** exercise a complete shift with sales, split payments, expenses, inventory, and closing; confirm closed sales, expenses, and closing history cannot be changed or removed.
+4. **Recovery:** create a backup and restore it into a separate test project; verify record counts, relationships, Auth dependencies, RLS policies, and the ability to sign in.
+5. **Operational failure cases:** test refreshes, duplicate submissions, network loss during writes, expired sessions, and clear user-visible errors without success-shaped fallbacks.
+6. **Release target:** confirm the app deployment points to the intended Vercel project (`sistema-rest-gbxt` for the current working production-like site), required environment variable names exist without exposing values, and database migrations are in sync.
+
+If any critical check is unverified, keep the pilot small and supervised, explain the limitation, and do not present a percentage estimate as a certification of safety or readiness.
+
 ## Implementation and validation
 
 Before editing, inspect the existing data flow and reuse established helpers and naming. For changes to this SaaS:
@@ -86,3 +101,4 @@ Before editing, inspect the existing data flow and reuse established helpers and
 
 - A successful local build does not verify Vercel environment configuration or whether applied Supabase migrations match the repository. Check required server and public variables by name only (never print their values), and verify database policies/migrations separately before claiming production readiness.
 - Keep the account-management screen and its destructive actions administrator-only, with clear confirmation and explicit error reporting. The UI can improve usability but must never substitute for server authorization or RLS.
+- Production changes can complete in Supabase while the app UI remains stale; verify each deployment target independently and communicate the exact migration/deployment state before a pilot.
