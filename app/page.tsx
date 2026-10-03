@@ -94,6 +94,7 @@ export default function Home() {
   const [errorAcceso, setErrorAcceso] = useState('');
   
   const [esRegistro, setEsRegistro] = useState(false);
+  const [requiereCompletarPerfil, setRequiereCompletarPerfil] = useState(false);
   const [cargandoAuth, setCargandoAuth] = useState(true);
 
   // Navegación
@@ -290,13 +291,29 @@ export default function Home() {
     await Promise.all(cargas);
   };
 
+  const prepararCompletarPerfil = (authUser: User) => {
+    setNombrePersonaInput(String(authUser.user_metadata.nombre_persona || ''));
+    setNombreLocalInput(String(authUser.user_metadata.nombre_local || ''));
+    setDocumentoLocalInput(String(authUser.user_metadata.documento || ''));
+    setDireccionLocalInput(String(authUser.user_metadata.direccion || ''));
+    setTelefonoLocalInput(String(authUser.user_metadata.telefono || ''));
+    setUsuario(authUser);
+    setRequiereCompletarPerfil(true);
+    setErrorAcceso('');
+  };
+
+  const esPerfilAusente = (error: unknown) =>
+    error instanceof Error && error.message === 'No se encontró el perfil de este acceso. Contacta al administrador.';
+
   // Inicialización de Sesión Persistente
   useEffect(() => {
     const inicializarSesion = async () => {
       setCargandoAuth(true);
+      let usuarioSesion: User | null = null;
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
         if (error) throw error;
+        usuarioSesion = session?.user || null;
         if (session?.user) {
           const { ownerId, role } = await obtenerContextoUsuario(session.user.id);
           setUsuario(session.user);
@@ -306,11 +323,15 @@ export default function Home() {
           setUsuario(null);
         }
       } catch (error) {
-        setErrorAcceso(error instanceof Error ? error.message : 'No fue posible validar la sesión.');
-        await supabase.auth.signOut();
-        setUsuario(null);
-        setPerfil(null);
-        setPropietarioId(null);
+        if (usuarioSesion && esPerfilAusente(error)) {
+          prepararCompletarPerfil(usuarioSesion);
+        } else {
+          setErrorAcceso(error instanceof Error ? error.message : 'No fue posible validar la sesión.');
+          await supabase.auth.signOut();
+          setUsuario(null);
+          setPerfil(null);
+          setPropietarioId(null);
+        }
       }
       setCargandoAuth(false);
     };
@@ -326,11 +347,15 @@ export default function Home() {
           await cargarPerfil(ownerId);
           await cargarTodo(ownerId, role);
         } catch (error) {
-          setErrorAcceso(error instanceof Error ? error.message : 'No fue posible validar el acceso al negocio.');
-          await supabase.auth.signOut();
-          setUsuario(null);
-          setPerfil(null);
-          setPropietarioId(null);
+          if (esPerfilAusente(error)) {
+            prepararCompletarPerfil(session.user);
+          } else {
+            setErrorAcceso(error instanceof Error ? error.message : 'No fue posible validar el acceso al negocio.');
+            await supabase.auth.signOut();
+            setUsuario(null);
+            setPerfil(null);
+            setPropietarioId(null);
+          }
         }
       } else {
         setUsuario(null);
@@ -434,39 +459,46 @@ export default function Home() {
       }
 
       const { data, error } = await supabase.auth.signUp({
-        email: emailInput,
+        email: identificadorAcceso.toLowerCase(),
         password: passwordInput,
+        options: {
+          data: {
+            tipo_cuenta: 'negocio',
+            nombre_persona: nombrePersonaInput.trim(),
+            nombre_local: nombreLocalInput.trim(),
+            documento: documentoLocalInput.trim(),
+            direccion: direccionLocalInput.trim(),
+            telefono: telefonoLocalInput.trim(),
+          },
+        },
       });
 
       if (error) {
-        alert('Error en registro: ' + error.message);
-      } else if (data.user) {
-        const perfilObj: Perfil = {
-          id: data.user.id,
-          nombre_persona: nombrePersonaInput,
-          nombre_local: nombreLocalInput,
-          documento: documentoLocalInput,
-          direccion: direccionLocalInput,
-          telefono: telefonoLocalInput,
-        };
+        setErrorAcceso(`No fue posible registrar el negocio: ${error.message}`);
+        return;
+      }
+      if (!data.user) {
+        setErrorAcceso('No se recibió una cuenta después del registro. Inténtalo de nuevo.');
+        return;
+      }
+      if (!data.session) {
+        setEsRegistro(false);
+        setErrorAcceso('La cuenta fue creada. Confirma tu correo electrónico y luego inicia sesión para acceder al negocio.');
+        return;
+      }
 
-        await supabase.from('perfiles').upsert([perfilObj]);
-        setPerfil(perfilObj);
+      try {
+        const { ownerId, role } = await obtenerContextoUsuario(data.user.id);
         setUsuario(data.user);
-
-        const mesasIniciales = [
-          { nombre: 'Mesa 1', user_id: data.user.id, estado: 'libre' },
-          { nombre: 'Mesa 2', user_id: data.user.id, estado: 'libre' },
-          { nombre: 'Mesa 3', user_id: data.user.id, estado: 'libre' },
-          { nombre: 'Mesa 4', user_id: data.user.id, estado: 'libre' },
-          { nombre: 'Mesa 5', user_id: data.user.id, estado: 'libre' },
-        ];
-        await supabase.from('mesas').insert(mesasIniciales);
-
-        setPropietarioId(data.user.id);
-        setRolActual('admin');
-        await cargarTodo(data.user.id);
+        await cargarPerfil(ownerId);
+        await cargarTodo(ownerId, role);
+        setErrorAcceso('');
         alert('Registro exitoso. Tu negocio fue creado con cinco mesas iniciales.');
+      } catch (contextError) {
+        await supabase.auth.signOut();
+        setErrorAcceso(contextError instanceof Error
+          ? `La cuenta se creó, pero no se pudo preparar el negocio: ${contextError.message}`
+          : 'La cuenta se creó, pero no se pudo preparar el negocio. Contacta al administrador.');
       }
     } else {
       const correoAcceso = identificadorAcceso.includes('@')
@@ -491,9 +523,50 @@ export default function Home() {
         await cargarPerfil(ownerId);
         await cargarTodo(ownerId, role);
       } catch (contextError) {
+        const mensajeError = contextError instanceof Error
+          ? contextError.message
+          : 'No fue posible validar el acceso al negocio.';
+        if (esPerfilAusente(contextError)) {
+          prepararCompletarPerfil(data.user);
+          return;
+        }
         await supabase.auth.signOut();
-        setErrorAcceso(contextError instanceof Error ? contextError.message : 'No fue posible validar el acceso al negocio.');
+        setErrorAcceso(mensajeError);
       }
+    }
+  };
+
+  const completarPerfilNegocio = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!usuario) return;
+    const datosPerfil = {
+      p_nombre_persona: nombrePersonaInput.trim(),
+      p_nombre_local: nombreLocalInput.trim(),
+      p_documento: documentoLocalInput.trim(),
+      p_direccion: direccionLocalInput.trim(),
+      p_telefono: telefonoLocalInput.trim(),
+    };
+    if (Object.values(datosPerfil).some((valor) => !valor)) {
+      setErrorAcceso('Completa todos los datos del negocio.');
+      return;
+    }
+
+    const { error } = await supabase.rpc('crear_perfil_negocio_actual', datosPerfil);
+    if (error) {
+      setErrorAcceso(`No fue posible completar el perfil del negocio: ${error.message}`);
+      return;
+    }
+
+    try {
+      const { ownerId, role } = await obtenerContextoUsuario(usuario.id);
+      setRequiereCompletarPerfil(false);
+      setErrorAcceso('');
+      await cargarPerfil(ownerId);
+      await cargarTodo(ownerId, role);
+    } catch (contextError) {
+      setErrorAcceso(contextError instanceof Error
+        ? `El perfil se guardó, pero no fue posible cargar el negocio: ${contextError.message}`
+        : 'El perfil se guardó, pero no fue posible cargar el negocio. Inténtalo de nuevo.');
     }
   };
 
@@ -501,6 +574,7 @@ export default function Home() {
     await supabase.auth.signOut();
     setUsuario(null);
     setPerfil(null);
+    setRequiereCompletarPerfil(false);
     setMenuUsuarioAbierto(false);
   };
 
@@ -1484,6 +1558,48 @@ export default function Home() {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', fontFamily: 'sans-serif' }}>
         <h3>Cargando sistema RestoPOS...</h3>
+      </div>
+    );
+  }
+
+  if (usuario && requiereCompletarPerfil) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: '#f1f5f9', fontFamily: 'sans-serif', padding: '20px 0' }}>
+        <div style={{ background: 'white', padding: '32px', borderRadius: '16px', border: '1px solid #cbd5e1', maxWidth: '460px', width: '90%', boxShadow: '0 12px 28px rgba(15,23,42,0.12)' }}>
+          <h2 style={{ margin: '0 0 8px', color: '#0f172a', textAlign: 'center' }}>Completa el perfil del negocio</h2>
+          <p style={{ margin: '0 0 20px', color: '#475569', textAlign: 'center', fontSize: '14px' }}>
+            Esta cuenta no tiene un perfil asociado. Completa los datos para recuperar el acceso.
+          </p>
+          <form onSubmit={completarPerfilNegocio} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a' }}>
+              Nombre del propietario
+              <input type="text" value={nombrePersonaInput} onChange={(e) => setNombrePersonaInput(e.target.value)} required style={{ width: '100%', marginTop: '4px', padding: '10px', border: '1px solid #cbd5e1', borderRadius: '8px', boxSizing: 'border-box' }} />
+            </label>
+            <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a' }}>
+              Nombre del negocio
+              <input type="text" value={nombreLocalInput} onChange={(e) => setNombreLocalInput(e.target.value)} required style={{ width: '100%', marginTop: '4px', padding: '10px', border: '1px solid #cbd5e1', borderRadius: '8px', boxSizing: 'border-box' }} />
+            </label>
+            <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a' }}>
+              NIT o cédula
+              <input type="text" value={documentoLocalInput} onChange={(e) => setDocumentoLocalInput(e.target.value)} required style={{ width: '100%', marginTop: '4px', padding: '10px', border: '1px solid #cbd5e1', borderRadius: '8px', boxSizing: 'border-box' }} />
+            </label>
+            <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a' }}>
+              Dirección del local
+              <input type="text" value={direccionLocalInput} onChange={(e) => setDireccionLocalInput(e.target.value)} required style={{ width: '100%', marginTop: '4px', padding: '10px', border: '1px solid #cbd5e1', borderRadius: '8px', boxSizing: 'border-box' }} />
+            </label>
+            <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a' }}>
+              Teléfono
+              <input type="tel" value={telefonoLocalInput} onChange={(e) => setTelefonoLocalInput(e.target.value)} required style={{ width: '100%', marginTop: '4px', padding: '10px', border: '1px solid #cbd5e1', borderRadius: '8px', boxSizing: 'border-box' }} />
+            </label>
+            {errorAcceso && <p role="alert" style={{ color: '#b91c1c', margin: 0, fontSize: '13px' }}>{errorAcceso}</p>}
+            <button type="submit" style={{ background: '#2563eb', color: 'white', border: '1px solid #1d4ed8', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>
+              Guardar perfil y continuar
+            </button>
+          </form>
+          <button type="button" onClick={cerrarSesion} style={{ width: '100%', marginTop: '12px', padding: '10px', background: 'white', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#334155', cursor: 'pointer' }}>
+            Cerrar sesión
+          </button>
+        </div>
       </div>
     );
   }
