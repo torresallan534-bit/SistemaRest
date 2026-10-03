@@ -71,8 +71,8 @@
   min-width: 190px;
   padding: 6px 10px 6px 7px;
   color: white;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(148, 163, 184, 0.5);
+  background: #1e293b;
+  border: 1px solid #334155;
   border-radius: 12px;
   cursor: pointer;
   text-align: left;
@@ -81,8 +81,13 @@
 
 .btnUsuario:hover,
 .btnUsuario[aria-expanded='true'] {
-  background: rgba(255, 255, 255, 0.16);
-  border-color: rgba(147, 197, 253, 0.8);
+  background: #0f172a;
+  border-color: #64748b;
+}
+
+.btnUsuario:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--app-accent) 45%, white);
+  outline-offset: 2px;
 }
 
 .avatarUsuario,
@@ -117,17 +122,18 @@
 }
 
 .identidadUsuario strong {
+  color: #ffffff;
   font-size: 13px;
 }
 
 .identidadUsuario small {
-  color: #cbd5e1;
+  color: #e2e8f0;
   font-size: 11px;
   margin-top: 2px;
 }
 
 .chevronUsuario {
-  color: #bfdbfe;
+  color: #dbeafe;
   font-size: 18px;
   line-height: 1;
 }
