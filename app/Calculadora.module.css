@@ -270,6 +270,11 @@
   border-bottom: 1px solid #e2e8f0;
 }
 
+.separadorPersonalizacion {
+  margin: 12px 0;
+  border-top: 1px solid #e2e8f0;
+}
+
 .tituloPersonalizacion {
   display: flex;
   align-items: center;
@@ -320,6 +325,14 @@
 
 .muestraColorActiva {
   box-shadow: 0 0 0 2px var(--app-accent);
+}
+
+.muestraFondo {
+  border-radius: 7px;
+}
+
+.muestraFondoActivo {
+  box-shadow: 0 0 0 2px #334155;
 }
 
 .btnRestaurarColor {
@@ -1623,7 +1636,11 @@
 }
 
 .contenedorApp {
-  background: linear-gradient(180deg, #e8f2ff 0%, #d8e9ff 100%);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--app-background) 68%, white) 0%,
+    var(--app-background) 100%
+  );
   color: #172033;
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }

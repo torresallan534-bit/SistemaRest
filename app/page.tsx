@@ -206,10 +206,18 @@ export default function Home() {
     if (typeof window === 'undefined') return '#2563eb';
     return window.localStorage.getItem('restopos-color-app') || '#2563eb';
   });
+  const [fondoApp, setFondoApp] = useState(() => {
+    if (typeof window === 'undefined') return '#d8e9ff';
+    return window.localStorage.getItem('restopos-fondo-app') || '#d8e9ff';
+  });
 
   useEffect(() => {
     window.localStorage.setItem('restopos-color-app', colorApp);
   }, [colorApp]);
+
+  useEffect(() => {
+    window.localStorage.setItem('restopos-fondo-app', fondoApp);
+  }, [fondoApp]);
 
   useEffect(() => {
     if (rolActual === 'admin' && propietarioId) {
@@ -1736,7 +1744,10 @@ export default function Home() {
   }
 
   return (
-    <div className={styles.contenedorApp} style={{ '--app-accent': colorApp } as React.CSSProperties}>
+    <div
+      className={styles.contenedorApp}
+      style={{ '--app-accent': colorApp, '--app-background': fondoApp } as React.CSSProperties}
+    >
       {/* BARRA SUPERIOR */}
       <nav className={styles.barrasNavegacion}>
         <div className={styles.brandTitle}>
@@ -1825,8 +1836,8 @@ export default function Home() {
                   <div className={styles.panelPersonalizacion}>
                     <div className={styles.tituloPersonalizacion}>
                       <div>
-                        <strong>Color de la aplicación</strong>
-                        <span>Personaliza el color principal de tu espacio.</span>
+                        <strong>Color principal</strong>
+                        <span>Botones, selecciones y detalles destacados.</span>
                       </div>
                       <input
                         type="color"
@@ -1847,15 +1858,54 @@ export default function Home() {
                           key={color}
                           type="button"
                           title={nombre}
-                          aria-label={`Usar color ${nombre}`}
+                          aria-label={`Usar ${nombre} como color principal`}
                           className={`${styles.muestraColor} ${colorApp === color ? styles.muestraColorActiva : ''}`}
                           style={{ backgroundColor: color }}
                           onClick={() => setColorApp(color)}
                         />
                       ))}
                     </div>
-                    <button type="button" className={styles.btnRestaurarColor} onClick={() => setColorApp('#2563eb')}>
-                      Restaurar color original
+                    <div className={styles.separadorPersonalizacion} />
+                    <div className={styles.tituloPersonalizacion}>
+                      <div>
+                        <strong>Fondo de la aplicación</strong>
+                        <span>Elige el color del espacio detrás de las tarjetas.</span>
+                      </div>
+                      <input
+                        type="color"
+                        value={fondoApp}
+                        onChange={(event) => setFondoApp(event.target.value)}
+                        aria-label="Elegir color de fondo"
+                      />
+                    </div>
+                    <div className={styles.paletaColores}>
+                      {[
+                        ['Azul claro', '#d8e9ff'],
+                        ['Lavanda', '#e5ddff'],
+                        ['Verde suave', '#d9f2e5'],
+                        ['Arena', '#f3e8d4'],
+                        ['Gris claro', '#e2e8f0'],
+                      ].map(([nombre, color]) => (
+                        <button
+                          key={color}
+                          type="button"
+                          title={nombre}
+                          aria-label={`Usar ${nombre} como fondo`}
+                          className={`${styles.muestraColor} ${styles.muestraFondo} ${fondoApp === color ? styles.muestraFondoActivo : ''}`}
+                          style={{ backgroundColor: color }}
+                          onClick={() => setFondoApp(color)}
+                        />
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      className={styles.btnRestaurarColor}
+                      onClick={() => {
+                        setColorApp('#2563eb');
+                        setFondoApp('#d8e9ff');
+                      }}
+                    >
+                      Restaurar colores originales
                     </button>
                   </div>
                 )}
