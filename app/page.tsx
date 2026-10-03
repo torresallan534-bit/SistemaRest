@@ -65,6 +65,14 @@ interface DiferenciaInventarioAnterior {
   unidad: string;
   diferencia: number;
 }
+interface ReportePdf {
+  titulo: string;
+  subtitulo: string;
+  encabezados: string[];
+  filas: string[][];
+  resumen?: string;
+  generado: string;
+}
 
 export default function Home() {
   // Autenticación y Perfil
@@ -175,6 +183,7 @@ export default function Home() {
   const [guardandoInventario, setGuardandoInventario] = useState(false);
 
   const [ventaSeleccionada, setVentaSeleccionada] = useState<Venta | null>(null);
+  const [reportePdf, setReportePdf] = useState<ReportePdf | null>(null);
   const [cierreFiltroSeleccionado, setCierreFiltroSeleccionado] = useState<string>('abierta');
   const [menuUsuarioAbierto, setMenuUsuarioAbierto] = useState(false);
   const [personalizacionAbierta, setPersonalizacionAbierta] = useState(false);
@@ -265,7 +274,7 @@ export default function Home() {
     const cargas = [
       obtenerJornadaActiva(uId),
       obtenerProductos(uId),
-      obtenerMesas(uId),
+      obtenerMesas(uId, role),
     ];
     if (role === 'admin') {
       cargas.push(
@@ -736,10 +745,18 @@ export default function Home() {
     if (data) setGastos(data as Gasto[]);
   };
 
-  async function obtenerMesas(uId: string) {
-    const { data } = await supabase.from('mesas').select('*').eq('user_id', uId).order('nombre', { ascending: true });
-    
+  async function obtenerMesas(uId: string, role: RolNegocio = rolActual) {
+    const { data, error } = await supabase.from('mesas').select('*').eq('user_id', uId).order('nombre', { ascending: true });
+    if (error) {
+      alert(`No fue posible cargar las mesas: ${error.message}`);
+      return;
+    }
+
     if (data && data.length === 0) {
+      if (role !== 'admin') {
+        setMesas([]);
+        return;
+      }
       const mesasIniciales = [
         { nombre: 'Mesa 1', user_id: uId, estado: 'libre' },
         { nombre: 'Mesa 2', user_id: uId, estado: 'libre' },
@@ -747,7 +764,12 @@ export default function Home() {
         { nombre: 'Mesa 4', user_id: uId, estado: 'libre' },
         { nombre: 'Mesa 5', user_id: uId, estado: 'libre' },
       ];
-      await supabase.from('mesas').insert(mesasIniciales);
+      const { error: insertError } = await supabase.from('mesas').insert(mesasIniciales);
+      if (insertError) {
+        alert(`No fue posible crear las mesas iniciales: ${insertError.message}`);
+        setMesas([]);
+        return;
+      }
       const { data: dataCreadas } = await supabase.from('mesas').select('*').eq('user_id', uId).order('nombre', { ascending: true });
       if (dataCreadas) setMesas(dataCreadas as Mesa[]);
     } else if (data) {
@@ -800,15 +822,24 @@ export default function Home() {
 
   const agregarMesa = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nuevoNombreMesa.trim() || !usuario) return;
-    await supabase.from('mesas').insert([{ nombre: nuevoNombreMesa, user_id: usuario.id, estado: 'libre' }]);
+    if (rolActual !== 'admin' || !nuevoNombreMesa.trim() || !usuario) return;
+    const { error } = await supabase.from('mesas').insert([{ nombre: nuevoNombreMesa, user_id: usuario.id, estado: 'libre' }]);
+    if (error) {
+      alert(`No fue posible agregar la mesa: ${error.message}`);
+      return;
+    }
     setNuevoNombreMesa('');
     obtenerMesas(propietarioId || usuario.id);
   };
 
   const eliminarMesa = async (id: string) => {
+    if (rolActual !== 'admin') return;
     if (!confirm('¿Eliminar esta mesa?')) return;
-    await supabase.from('mesas').delete().eq('id', id);
+    const { error } = await supabase.from('mesas').delete().eq('id', id);
+    if (error) {
+      alert(`No fue posible eliminar la mesa: ${error.message}`);
+      return;
+    }
     if (mesaSeleccionada?.id === id) setMesaSeleccionada(null);
     if (usuario) obtenerMesas(propietarioId || usuario.id);
   };
@@ -1242,6 +1273,78 @@ export default function Home() {
   };
 
   const formatearFecha = (fechaISO: string) => new Date(fechaISO).toLocaleDateString('es-CO', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const exportarVentasPdf = () => {
+    setReportePdf({
+      titulo: 'Ventas del turno',
+      subtitulo: `${perfil?.nombre_local || 'Negocio'} · ${etiquetaTurnoSeleccionado}`,
+      encabezados: ['Fecha y hora', 'Cliente', 'Método de pago', 'Atendió', 'Total'],
+      filas: ventasFiltradasHistorial.map((venta) => [
+        formatearFecha(venta.created_at),
+        venta.cliente || 'Consumidor final',
+        venta.metodo_pago,
+        venta.nombre_vendedor || 'Administrador',
+        `$${venta.total.toLocaleString('es-CO')}`,
+      ]),
+      resumen: `Ventas: ${ventasFiltradasHistorial.length} · Total: $${ventasFiltradasHistorial.reduce((total, venta) => total + venta.total, 0).toLocaleString('es-CO')}`,
+      generado: new Date().toISOString(),
+    });
+  };
+
+  const exportarGastosPdf = () => {
+    setReportePdf({
+      titulo: 'Gastos del turno',
+      subtitulo: `${perfil?.nombre_local || 'Negocio'} · ${etiquetaTurnoSeleccionado}`,
+      encabezados: ['Fecha y hora', 'Concepto', 'Método de pago', 'Monto'],
+      filas: gastosFiltradosHistorial.map((gasto) => [
+        formatearFecha(gasto.created_at),
+        gasto.concepto,
+        gasto.metodo_pago,
+        `$${gasto.monto.toLocaleString('es-CO')}`,
+      ]),
+      resumen: `Gastos: ${gastosFiltradosHistorial.length} · Total: $${gastosFiltradosHistorial.reduce((total, gasto) => total + gasto.monto, 0).toLocaleString('es-CO')}`,
+      generado: new Date().toISOString(),
+    });
+  };
+
+  const exportarInventarioPdf = () => {
+    if (!inventarioTurnoActual) return;
+    setReportePdf({
+      titulo: 'Inventario del turno',
+      subtitulo: `${perfil?.nombre_local || 'Negocio'} · ${jornadaId ? 'Turno actual' : 'Último turno cerrado'}`,
+      encabezados: ['Insumo', 'Unidad', 'Stock inicial', 'Entradas', 'Consumo esperado', 'Conteo final', 'Diferencia'],
+      filas: insumos.map((insumo) => {
+        const diferencia = Number(inventarioTurnoActual.diferencias[insumo.id] || 0);
+        return [
+          insumo.nombre,
+          insumo.unidad,
+          String(inventarioTurnoActual.stock_inicial[insumo.id] ?? 0),
+          String(inventarioTurnoActual.entradas[insumo.id] ?? 0),
+          String(inventarioTurnoActual.consumo_esperado[insumo.id] ?? 0),
+          String(inventarioTurnoActual.conteo_final[insumo.id] ?? 0),
+          `${diferencia > 0 ? '+' : ''}${diferencia}`,
+        ];
+      }),
+      resumen: `Insumos: ${insumos.length} · ${formatearFecha(inventarioTurnoActual.created_at)}`,
+      generado: new Date().toISOString(),
+    });
+  };
+
+  useEffect(() => {
+    if (!reportePdf) return;
+    document.body.classList.add('reportePdfActivo');
+    const temporizador = window.setTimeout(() => window.print(), 150);
+    const cerrarReporte = () => {
+      document.body.classList.remove('reportePdfActivo');
+      setReportePdf(null);
+    };
+    window.addEventListener('afterprint', cerrarReporte);
+    return () => {
+      window.clearTimeout(temporizador);
+      window.removeEventListener('afterprint', cerrarReporte);
+      document.body.classList.remove('reportePdfActivo');
+    };
+  }, [reportePdf]);
+
   const avanzarTicketDivision = () => {
     if (ticketsDivisionPendientes.length > 0) {
       setVentaConfirmadaTicket(ticketsDivisionPendientes[0]);
@@ -1371,6 +1474,11 @@ export default function Home() {
   const gastosFiltradosHistorial = cierreFiltroSeleccionado === 'abierta'
     ? gastosJornadaActual
     : gastos.filter((g) => g.cierre_id === cierreFiltroSeleccionado || (g.jornada_id && jornadasRelacionadasAlArqueo.has(g.jornada_id)));
+  const etiquetaTurnoSeleccionado = cierreFiltroSeleccionado === 'abierta'
+    ? 'Turno activo'
+    : arqueoSeleccionado
+      ? `Turno cerrado el ${formatearFecha(arqueoSeleccionado.fecha)}`
+      : 'Turno seleccionado';
 
   if (cargandoAuth) {
     return (
@@ -1950,6 +2058,14 @@ export default function Home() {
                         </option>
                       ))}
                     </select>
+                    <div className={styles.accionesExportacion}>
+                      <button type="button" className={styles.btnVerConBorde} onClick={exportarVentasPdf}>
+                        Guardar ventas como PDF
+                      </button>
+                      <button type="button" className={styles.btnVerConBorde} onClick={exportarGastosPdf}>
+                        Guardar gastos como PDF
+                      </button>
+                    </div>
                   </div>
 
                   {/* Resumen dinámico al consultar un arqueo guardado del pasado */}
@@ -2084,6 +2200,11 @@ export default function Home() {
                   </strong>
                 )}
                 {inventarioTurnoActual && <strong>Inventario guardado y bloqueado el {formatearFecha(inventarioTurnoActual.created_at)}.</strong>}
+                {inventarioTurnoActual && (
+                  <button type="button" className={styles.btnVerConBorde} onClick={exportarInventarioPdf}>
+                    Guardar inventario como PDF
+                  </button>
+                )}
               </div>
               {jornadaId
                 && diferenciasInventarioJornadaId === jornadaId
@@ -2773,6 +2894,32 @@ export default function Home() {
             </div>
           </div>
         </div>
+      )}
+      {reportePdf && (
+        <section className={styles.reporteImpresion} aria-label={reportePdf.titulo}>
+          <header className={styles.encabezadoReporte}>
+            <p>{perfil?.nombre_local || 'Negocio'}</p>
+            <h1>{reportePdf.titulo}</h1>
+            <p>{reportePdf.subtitulo}</p>
+            <small>Generado el {formatearFecha(reportePdf.generado)}</small>
+          </header>
+          <table className={styles.tablaReporte}>
+            <thead>
+              <tr>{reportePdf.encabezados.map((encabezado) => <th key={encabezado}>{encabezado}</th>)}</tr>
+            </thead>
+            <tbody>
+              {reportePdf.filas.length === 0 ? (
+                <tr><td colSpan={reportePdf.encabezados.length}>No hay registros para este turno.</td></tr>
+              ) : reportePdf.filas.map((fila, index) => (
+                <tr key={`${index}-${fila[0]}`}>
+                  {fila.map((celda, celdaIndex) => <td key={`${index}-${celdaIndex}`}>{celda}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {reportePdf.resumen && <p className={styles.resumenReporte}>{reportePdf.resumen}</p>}
+          <footer>Documento interno · {perfil?.nombre_local || 'Negocio'}</footer>
+        </section>
       )}
     </div>
   );
