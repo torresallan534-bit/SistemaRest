@@ -1610,7 +1610,7 @@
 }
 
 .contenedorApp {
-  background: #f5f7fa;
+  background: linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
   color: #172033;
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
