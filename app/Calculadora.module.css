@@ -139,7 +139,7 @@
   z-index: 120;
   width: 290px;
   padding: 14px;
-  color: #0f172a;
+  color: #111827;
   background: white;
   border: 1px solid #dbe7f5;
   border-radius: 14px;
@@ -152,7 +152,7 @@
   gap: 8px;
   width: 100%;
   padding: 10px 0;
-  color: #334155;
+  color: #1f2937;
   background: transparent;
   border: 0;
   border-bottom: 1px solid #e2e8f0;
@@ -243,7 +243,14 @@
 }
 
 .btnPersonalizar:hover {
-  color: var(--app-accent-dark);
+  color: #111827;
+  background: #f1f5f9;
+}
+
+.dropdownUsuario .tituloPersonalizacion span,
+.dropdownUsuario .encabezadoDropdown span,
+.dropdownUsuario .miembroUsuario small {
+  color: #475569;
 }
 
 .indicadorPersonalizacion {
@@ -1870,19 +1877,23 @@
     margin: 14mm;
   }
 
-  body.reportePdfActivo * {
+  :global(body.reportePdfActivo) * {
     visibility: hidden !important;
   }
 
-  body.reportePdfActivo .reporteImpresion,
-  body.reportePdfActivo .reporteImpresion * {
+  :global(body.reportePdfActivo) .contenedorApp > :not(.reporteImpresion) {
+    display: none !important;
+  }
+
+  :global(body.reportePdfActivo) .reporteImpresion,
+  :global(body.reportePdfActivo) .reporteImpresion * {
     visibility: visible !important;
   }
 
-  body.reportePdfActivo .reporteImpresion {
-    position: absolute;
-    inset: 0;
+  :global(body.reportePdfActivo) .reporteImpresion {
+    position: static;
     display: block !important;
+    overflow: visible;
     padding: 0;
     color: #111827;
     background: #ffffff;

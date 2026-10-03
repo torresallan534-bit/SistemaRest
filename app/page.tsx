@@ -1406,14 +1406,22 @@ export default function Home() {
   useEffect(() => {
     if (!reportePdf) return;
     document.body.classList.add('reportePdfActivo');
-    const temporizador = window.setTimeout(() => window.print(), 150);
+    let cancelado = false;
+    const imprimirTrasRenderizar = () => {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          if (!cancelado) window.print();
+        });
+      });
+    };
+    void document.fonts.ready.then(imprimirTrasRenderizar);
     const cerrarReporte = () => {
       document.body.classList.remove('reportePdfActivo');
       setReportePdf(null);
     };
     window.addEventListener('afterprint', cerrarReporte);
     return () => {
-      window.clearTimeout(temporizador);
+      cancelado = true;
       window.removeEventListener('afterprint', cerrarReporte);
       document.body.classList.remove('reportePdfActivo');
     };
